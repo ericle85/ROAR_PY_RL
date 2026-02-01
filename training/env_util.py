@@ -41,13 +41,14 @@ class SimplifyCarlaActionFilter(gym.ActionWrapper):
         return real_action
 
 async def initialize_roar_env(
-    carla_host : str = "localhost", 
-    carla_port : int = 2000, 
-    control_timestep : float = 0.05, 
+    carla_host : str = "localhost",
+    carla_port : int = 2000,
+    control_timestep : float = 0.05,
     physics_timestep : float = 0.01,
     waypoint_information_distances : list = [2.0, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 80.0, 100.0],
     image_width : int = 400,
-    image_height : int = 200
+    image_height : int = 200,
+    racing_line_path : str = None
 ):
     carla_client = carla.Client(carla_host, carla_port)
     carla_client.set_timeout(15.0)
@@ -107,8 +108,9 @@ async def initialize_roar_env(
         velocimeter_sensor,
         collision_sensor,
         waypoint_information_distances=set(waypoint_information_distances),
-        world = world, 
-        collision_threshold = 1.0
+        world = world,
+        collision_threshold = 1.0,
+        racing_line_path = racing_line_path
     )
     env = SimplifyCarlaActionFilter(env)
     env = gym.wrappers.FilterObservation(env, ["gyroscope", "waypoints_information", "local_velocimeter"])

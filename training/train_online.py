@@ -23,30 +23,29 @@ SUBSTEPS_PER_STEP = 5
 MODEL_SAVE_FREQ = 50_000
 VIDEO_SAVE_FREQ = 20_000
 TIME_LIMIT = RUN_FPS * 2 * 60
-run_name = "Denser_Waypoints_And_Collision_Detection"
+run_name = "PPO_RacingLine_Reward"
+
+# Racing line path (relative to repo root)
+RACING_LINE_PATH = Path(__file__).parent.parent / "racingline" / "main.npz"
 
 training_params = dict(
-    learning_rate = 1e-5,  # be smaller 2.5e-4
-    #n_steps = 256 * RUN_FPS, #1024
-    batch_size=256,  # mini_batch_size = 256?
-    # n_epochs=10,
-    gamma=0.97,  # rec range .9 - .99 0.999997
-    ent_coef="auto",
-    target_entropy=-10.0,
-    # gae_lambda=0.95,
-    # clip_range_vf=None,
-    # vf_coef=0.5,
-    # max_grad_norm=0.5,
+    learning_rate=2.5e-4,
+    n_steps=2048,  # rollout buffer size
+    batch_size=64,  # minibatch size
+    n_epochs=10,
+    gamma=0.99,
+    gae_lambda=0.95,
+    clip_range=0.2,
+    clip_range_vf=None,
+    ent_coef=0.01,  # entropy coefficient for exploration
+    vf_coef=0.5,
+    max_grad_norm=0.5,
     use_sde=True,
-    sde_sample_freq = RUN_FPS * 2,
-    # target_kl=None,
-    # tensorboard_log=(Path(misc_params["model_directory"]) / "tensorboard").as_posix(),
-    # create_eval_env=False,
-    # policy_kwargs=None,
+    sde_sample_freq=4,
+    target_kl=None,
     verbose=1,
     seed=1,
     device=th.device('cuda' if th.cuda.is_available() else 'cpu'),
-    # _init_setup_model=True,
 )
 
 def find_latest_model(root_path: Path) -> Optional[Path]:
@@ -67,7 +66,11 @@ def find_latest_model(root_path: Path) -> Optional[Path]:
     return latest_model_file_path
 
 def get_env(wandb_run) -> gym.Env:
-    env = asyncio.run(initialize_roar_env(control_timestep=1.0/RUN_FPS, physics_timestep=1.0/(RUN_FPS*SUBSTEPS_PER_STEP)))
+    env = asyncio.run(initialize_roar_env(
+        control_timestep=1.0/RUN_FPS,
+        physics_timestep=1.0/(RUN_FPS*SUBSTEPS_PER_STEP),
+        racing_line_path=str(RACING_LINE_PATH)
+    ))
     env = gym.wrappers.FlattenObservation(env)
     env = FlattenActionWrapper(env)
     env = gym.wrappers.TimeLimit(env, max_episode_steps = TIME_LIMIT)
@@ -93,21 +96,17 @@ def main():
     
     if latest_model_path is None:
         # create new models
-        model = SAC(
+        model = PPO(
             "MlpPolicy",
             env,
-            # optimize_memory_usage=True,
-            replay_buffer_kwargs={"handle_timeout_termination": True},
             **training_params
         )
     else:
         # Load the model
         print(f"reloading from {type(latest_model_path)} {latest_model_path}\n\n\n\n")
-        model = SAC.load( 
+        model = PPO.load(
             latest_model_path,
             env=env,
-            # optimize_memory_usage=True,
-            # replay_buffer_kwargs={"handle_timeout_termination": False}
             **training_params
         )
 
