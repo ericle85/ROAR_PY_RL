@@ -193,6 +193,52 @@ class RacingLineTracker:
         interpolated = self.get_interpolated_location(projection)
         return np.linalg.norm(point[:2] - interpolated[:2])
 
+    def trace_forward_projection(
+        self, projection: RacingLineProjection, distance: float
+    ) -> RacingLineProjection:
+        """
+        Trace forward along the racing line by a given distance.
+        Returns a new projection at that point.
+        """
+        current_idx = projection.segment_idx
+        remaining_dist = distance + projection.distance_along_segment
+
+        # Walk forward through segments until we've covered the distance
+        while remaining_dist > self._segment_lengths[current_idx]:
+            remaining_dist -= self._segment_lengths[current_idx]
+            current_idx = (current_idx + 1) % self.num_points
+
+        return RacingLineProjection(current_idx, remaining_dist)
+
+    def get_interpolated_yaw(self, projection: RacingLineProjection) -> float:
+        """Get interpolated yaw angle at this projection point."""
+        idx = projection.segment_idx
+        next_idx = (idx + 1) % self.num_points
+        seg_len = self._segment_lengths[idx]
+
+        if seg_len < 1e-9:
+            return self.rotations[idx][2]  # yaw is third element (roll, pitch, yaw)
+
+        alpha = np.clip(projection.distance_along_segment / seg_len, 0.0, 1.0)
+
+        # Interpolate yaw with angle wrapping
+        yaw1 = self.rotations[idx][2]
+        yaw2 = self.rotations[next_idx][2]
+        delta_yaw = normalize_rad(yaw2 - yaw1)
+        return normalize_rad(yaw1 + alpha * delta_yaw)
+
+    def get_interpolated_lane_width(self, projection: RacingLineProjection) -> float:
+        """Get interpolated lane width at this projection point."""
+        idx = projection.segment_idx
+        next_idx = (idx + 1) % self.num_points
+        seg_len = self._segment_lengths[idx]
+
+        if seg_len < 1e-9:
+            return self.lane_widths[idx]
+
+        alpha = np.clip(projection.distance_along_segment / seg_len, 0.0, 1.0)
+        return (1 - alpha) * self.lane_widths[idx] + alpha * self.lane_widths[next_idx]
+
 
 class RoarRLSimEnv(RoarRLEnv):
     def __init__(
@@ -256,13 +302,29 @@ class RoarRLSimEnv(RoarRLEnv):
         if len(self.waypoint_information_distances) > 0:
             waypoint_info = {}
             for trace_dist in self.waypoint_information_distances:
-                traced_projection = self.waypoints_tracer.trace_forward_projection(self._traced_projection, trace_dist)
-                traced_projection_wp = self.waypoints_tracer.get_interpolated_waypoint(traced_projection)
-                waypoint_info[f"waypoint_{trace_dist}"] = np.concatenate([
-                    global_to_local(traced_projection_wp.location, location, yaw),
-                    np.array([normalize_rad(traced_projection_wp.roll_pitch_yaw[2] - yaw)]),
-                    np.array([traced_projection_wp.lane_width])
-                ])
+                # Use racing line waypoints if available, otherwise fall back to centerline
+                if self.racing_line is not None:
+                    traced_projection = self.racing_line.trace_forward_projection(
+                        self._racing_line_projection, trace_dist
+                    )
+                    wp_location = self.racing_line.get_interpolated_location(traced_projection)
+                    wp_yaw = self.racing_line.get_interpolated_yaw(traced_projection)
+                    wp_lane_width = self.racing_line.get_interpolated_lane_width(traced_projection)
+                    waypoint_info[f"waypoint_{trace_dist}"] = np.concatenate([
+                        global_to_local(wp_location, location, yaw),
+                        np.array([normalize_rad(wp_yaw - yaw)]),
+                        np.array([wp_lane_width])
+                    ])
+                else:
+                    traced_projection = self.waypoints_tracer.trace_forward_projection(
+                        self._traced_projection, trace_dist
+                    )
+                    traced_projection_wp = self.waypoints_tracer.get_interpolated_waypoint(traced_projection)
+                    waypoint_info[f"waypoint_{trace_dist}"] = np.concatenate([
+                        global_to_local(traced_projection_wp.location, location, yaw),
+                        np.array([normalize_rad(traced_projection_wp.roll_pitch_yaw[2] - yaw)]),
+                        np.array([traced_projection_wp.lane_width])
+                    ])
 
             obs["waypoints_information"] = waypoint_info
         info_dict["delta_distance_travelled"] = self._delta_distance_travelled

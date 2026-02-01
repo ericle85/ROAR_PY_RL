@@ -6,6 +6,55 @@ import roar_py_carla
 import roar_py_interface
 import carla
 
+
+def build_racing_action_lut() -> np.ndarray:
+    """
+    Build a lookup table of (throttle, steer) pairs for racing.
+    Similar to RLGym's approach - curated action combinations.
+
+    Returns array of shape (N, 2) where each row is [throttle, steer].
+    """
+    actions = []
+
+    # Throttle values: focus on forward driving with some braking
+    throttle_values = [-1.0, -0.5, 0.0, 0.3, 0.5, 0.7, 0.85, 1.0]
+
+    # Steer values: finer resolution near center for precise control
+    steer_values = [-1.0, -0.7, -0.5, -0.3, -0.15, -0.07, 0.0, 0.07, 0.15, 0.3, 0.5, 0.7, 1.0]
+
+    for throttle in throttle_values:
+        for steer in steer_values:
+            actions.append([throttle, steer])
+
+    return np.array(actions, dtype=np.float32)
+
+
+# Pre-built LUT for racing actions
+RACING_ACTION_LUT = build_racing_action_lut()
+
+
+class DiscreteToContActionWrapper(gym.ActionWrapper):
+    """
+    Converts a single discrete action index to (throttle, steer) via lookup table.
+    Similar to RLGym's approach with curated action combinations.
+
+    Action space: Discrete(N) where N = number of action combinations in LUT.
+    """
+    def __init__(self, env: gym.Env, action_lut: np.ndarray = None):
+        super().__init__(env)
+        self.lut = action_lut if action_lut is not None else RACING_ACTION_LUT
+        self._action_space = gym.spaces.Discrete(len(self.lut))
+        print(f"Discrete action space with {len(self.lut)} actions")
+
+    def action(self, action: int) -> Dict[str, np.ndarray]:
+        """Convert discrete index to continuous Dict action via LUT."""
+        throttle, steer = self.lut[action]
+        return {
+            "throttle": np.array([throttle], dtype=np.float32),
+            "steer": np.array([steer], dtype=np.float32)
+        }
+
+
 class SimplifyCarlaActionFilter(gym.ActionWrapper):
     def __init__(self, env: gym.Env):
         super().__init__(env)
@@ -48,7 +97,9 @@ async def initialize_roar_env(
     waypoint_information_distances : list = [2.0, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 80.0, 100.0],
     image_width : int = 400,
     image_height : int = 200,
-    racing_line_path : str = None
+    racing_line_path : str = None,
+    use_discrete_actions : bool = False,
+    action_lut : np.ndarray = None
 ):
     carla_client = carla.Client(carla_host, carla_port)
     carla_client.set_timeout(15.0)
@@ -114,4 +165,8 @@ async def initialize_roar_env(
     )
     env = SimplifyCarlaActionFilter(env)
     env = gym.wrappers.FilterObservation(env, ["gyroscope", "waypoints_information", "local_velocimeter"])
+
+    if use_discrete_actions:
+        env = DiscreteToContActionWrapper(env, action_lut=action_lut)
+
     return env

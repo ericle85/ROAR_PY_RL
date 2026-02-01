@@ -23,7 +23,8 @@ SUBSTEPS_PER_STEP = 5
 MODEL_SAVE_FREQ = 50_000
 VIDEO_SAVE_FREQ = 20_000
 TIME_LIMIT = RUN_FPS * 2 * 60
-run_name = "PPO_RacingLine_Reward"
+USE_DISCRETE_ACTIONS = True  # Use discrete action LUT (like RLGym)
+run_name = "PPO_Discrete_RacingLine"
 
 # Racing line path (relative to repo root)
 RACING_LINE_PATH = r'C:\Users\shrek\ROAR_PY_RL\racingline\main.npz'
@@ -40,8 +41,6 @@ training_params = dict(
     ent_coef=0.01,  # entropy coefficient for exploration
     vf_coef=0.5,
     max_grad_norm=0.5,
-    use_sde=True,
-    sde_sample_freq=4,
     target_kl=None,
     verbose=1,
     seed=1,
@@ -69,10 +68,13 @@ def get_env(wandb_run) -> gym.Env:
     env = asyncio.run(initialize_roar_env(
         control_timestep=1.0/RUN_FPS,
         physics_timestep=1.0/(RUN_FPS*SUBSTEPS_PER_STEP),
-        racing_line_path=str(RACING_LINE_PATH)
+        racing_line_path=str(RACING_LINE_PATH),
+        use_discrete_actions=USE_DISCRETE_ACTIONS
     ))
     env = gym.wrappers.FlattenObservation(env)
-    env = FlattenActionWrapper(env)
+    # Only flatten actions for continuous space
+    if not USE_DISCRETE_ACTIONS:
+        env = FlattenActionWrapper(env)
     env = gym.wrappers.TimeLimit(env, max_episode_steps = TIME_LIMIT)
     env = gym.wrappers.RecordEpisodeStatistics(env)
     env = gym.wrappers.RecordVideo(env, f"videos/{wandb_run.name}", step_trigger=lambda x: x % VIDEO_SAVE_FREQ == 0)
