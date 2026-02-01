@@ -17,10 +17,10 @@ def build_racing_action_lut() -> np.ndarray:
     actions = []
 
     # Throttle values: focus on forward driving with some braking
-    throttle_values = [-1.0, -0.5, 0.0, 0.3, 0.5, 0.7, 0.85, 1.0]
+    throttle_values = [-1.0, 0.0, 1.0]
 
     # Steer values: finer resolution near center for precise control
-    steer_values = [-1.0, -0.7, -0.5, -0.3, -0.15, -0.07, 0.0, 0.07, 0.15, 0.3, 0.5, 0.7, 1.0]
+    steer_values = [-0.25, 0.0, 0.25]
 
     for throttle in throttle_values:
         for steer in steer_values:
@@ -164,7 +164,7 @@ async def initialize_roar_env(
         racing_line_path = racing_line_path
     )
     env = SimplifyCarlaActionFilter(env)
-    env = gym.wrappers.FilterObservation(env, ["gyroscope", "waypoints_information", "local_velocimeter"])
+    env = gym.wrappers.FilterObservation(env, ["gyroscope", "waypoints_information", "local_velocimeter", "prev_action"])
 
     if use_discrete_actions:
         env = DiscreteToContActionWrapper(env, action_lut=action_lut)

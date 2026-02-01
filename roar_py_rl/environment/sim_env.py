@@ -277,6 +277,9 @@ class RoarRLSimEnv(RoarRLEnv):
             self._racing_line_projection = RacingLineProjection(0, 0.0)
             print(f"Loaded racing line with {self.racing_line.num_points} points, total length: {self.racing_line.total_length:.1f}m")
 
+        # Previous action for observation (throttle, steer)
+        self._prev_action = np.zeros(2, dtype=np.float32)
+
     @property
     def observation_space(self) -> gym.Space:
         space = super().observation_space
@@ -290,7 +293,15 @@ class RoarRLSimEnv(RoarRLEnv):
                     dtype=np.float32
                 )
             space["waypoints_information"] = gym.spaces.Dict(waypoints_info_space_dict)
-        
+
+        # Previous action (throttle, steer)
+        space["prev_action"] = gym.spaces.Box(
+            low=-1.0,
+            high=1.0,
+            shape=(2,),
+            dtype=np.float32
+        )
+
         return space
 
     def observation(self, info_dict : Dict[str, Any]) -> Dict[str, Any]:
@@ -327,6 +338,8 @@ class RoarRLSimEnv(RoarRLEnv):
                     ])
 
             obs["waypoints_information"] = waypoint_info
+
+        obs["prev_action"] = self._prev_action.copy()
         info_dict["delta_distance_travelled"] = self._delta_distance_travelled
         return obs
 
@@ -396,6 +409,16 @@ class RoarRLSimEnv(RoarRLEnv):
             self._racing_line_delta_progress = self.racing_line.delta_distance_projection(old_projection, new_projection)
 
     def _step(self, action: Any) -> None:
+        # Store action for next observation (extract throttle/steer from dict)
+        if isinstance(action, dict):
+            throttle = float(action.get("throttle", 0.0))
+            steer = float(action.get("steer", 0.0))
+            # Handle array values
+            if hasattr(throttle, "__len__"):
+                throttle = float(throttle[0]) if len(throttle) > 0 else 0.0
+            if hasattr(steer, "__len__"):
+                steer = float(steer[0]) if len(steer) > 0 else 0.0
+            self._prev_action = np.array([throttle, steer], dtype=np.float32)
         self._perform_waypoint_trace()
 
     def _reset(self) -> None:
@@ -410,6 +433,7 @@ class RoarRLSimEnv(RoarRLEnv):
 
         self._perform_waypoint_trace()
         self._delta_distance_travelled = 0.0
+        self._prev_action = np.zeros(2, dtype=np.float32)
 
     def is_terminated(self, observation : Any, action : Any, info_dict : Dict[str, Any]) -> bool:
         collision_impulse : np.ndarray = self.collision_sensor.get_last_gym_observation()
