@@ -291,17 +291,20 @@ class RoarRLSimEnv(RoarRLEnv):
             dist_to_line = self._racing_line_dist
             delta_progress = self._racing_line_delta_progress
 
-            # Reward = progress along racing line, penalized by distance from it
-            # Gaussian-like penalty: exp(-dist^2 / (2 * sigma^2)), sigma ~= 2m
-            proximity_factor = np.exp(-(dist_to_line ** 2) / 8.0)
+            # Decoupled reward: velocity + line following + progress (additive, not multiplicative)
+            # This prevents the model from aggressively diving toward the racing line
 
-            if delta_progress <= 0:
-                # Going backwards: penalize more heavily
-                reward = delta_progress * 20.0 * (1.0 - 0.5 * proximity_factor)
-            else:
-                # Going forwards: reward scaled by proximity to racing line
-                reward = delta_progress * 20.0 * (0.5 + 0.5 * proximity_factor)
+            # 1. Velocity reward - primary incentive to go fast
+            velocity = np.linalg.norm(self.velocimeter_sensor.get_last_gym_observation())
+            velocity_reward = velocity * 0.1
 
+            # 2. Distance penalty - gentle nudge toward racing line (not multiplied by progress)
+            line_penalty = -dist_to_line * 0.3
+
+            # 3. Small progress bonus - reward forward movement
+            progress_reward = delta_progress * 5.0 if delta_progress > 0 else delta_progress * 10.0
+
+            reward = velocity_reward + line_penalty + progress_reward
             return reward
         else:
             # Fallback: original waypoint-based reward
