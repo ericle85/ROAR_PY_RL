@@ -45,7 +45,7 @@ training_params = dict(
     target_kl=None,
     verbose=1,
     seed=1,
-    device='cuda',
+    device='cpu',
 )
 
 def find_latest_model(root_path: Path) -> Optional[Path]:
@@ -98,6 +98,7 @@ def main():
         model = PPO(
             "MlpPolicy",
             env,
+            tensorboard_log=f"runs/{wandb_run.name}",
             **training_params
         )
     else:
@@ -106,6 +107,7 @@ def main():
         model = PPO.load(
             latest_model_path,
             env=env,
+            tensorboard_log=f"runs/{wandb_run.name}",
             **training_params
         )
 
