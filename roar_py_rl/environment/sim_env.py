@@ -1,13 +1,19 @@
-from typing import List, Optional
+from typing import List, Optional, NamedTuple
 from roar_py_interface import RoarPyActor, RoarPySensor, RoarPyWaypoint, RoarPyWorld, RoarPyLocationInWorldSensor, RoarPyCollisionSensor, RoarPyVelocimeterSensor, RoarPyRollPitchYawSensor, RoarPyWaypointsTracker, RoarPyWaypointsProjection
 from .base_env import RoarRLEnv
 from typing import Any, Dict, SupportsFloat, Tuple, Optional, Set
 import gymnasium as gym
 import numpy as np
-from shapely import Polygon, Point
+from shapely import Polygon, Point, LineString
 from collections import OrderedDict
 from pathlib import Path
-from scipy.spatial import KDTree
+import math
+
+
+class RacingLineProjection(NamedTuple):
+    """Projection result onto racing line segment."""
+    segment_idx: int  # Index of the segment start point
+    distance_along_segment: float  # Distance from segment start to projected point
 
 def distance_to_waypoint_polygon(
     waypoint_1: RoarPyWaypoint,
@@ -36,57 +42,156 @@ def normalize_rad(rad : float) -> float:
 
 
 class RacingLineTracker:
-    """Tracks vehicle position relative to an optimized racing line."""
+    """
+    Tracks vehicle position relative to an optimized racing line.
+    Uses segment projection similar to RoarPyWaypointsTracker for accurate distance calculation.
+    """
 
     def __init__(self, racing_line_path: str):
         data = np.load(racing_line_path)
-        self.locations = data['locations'][:, :2]  # Only x, y for 2D distance
+        self.locations = data['locations'][:, :2]  # x, y for 2D projection
         self.locations_3d = data['locations']
         self.rotations = data['rotations']
         self.lane_widths = data['lane_widths']
-
-        # Build KD-tree for fast nearest neighbor lookup
-        self.kdtree = KDTree(self.locations)
         self.num_points = len(self.locations)
 
-        # Precompute cumulative distances along racing line
-        diffs = np.diff(self.locations, axis=0)
-        segment_lengths = np.linalg.norm(diffs, axis=1)
-        self.cumulative_distances = np.zeros(self.num_points)
-        self.cumulative_distances[1:] = np.cumsum(segment_lengths)
-        self.total_length = self.cumulative_distances[-1]
+        # Precompute segment lengths and cumulative distances
+        self._segment_lengths = np.zeros(self.num_points)
+        for i in range(self.num_points):
+            next_i = (i + 1) % self.num_points
+            self._segment_lengths[i] = np.linalg.norm(
+                self.locations[next_i] - self.locations[i]
+            )
 
-        self._last_idx = 0
+        self._cumulative_distances = np.zeros(self.num_points)
+        for i in range(1, self.num_points):
+            self._cumulative_distances[i] = (
+                self._cumulative_distances[i - 1] + self._segment_lengths[i - 1]
+            )
 
-    def get_nearest_point(self, location: np.ndarray) -> Tuple[int, float, np.ndarray]:
+        # Total length includes the closing segment back to start
+        self._total_length = self._cumulative_distances[-1] + self._segment_lengths[-1]
+
+    @property
+    def total_length(self) -> float:
+        return self._total_length
+
+    def _point_to_segment_distance(
+        self, point: np.ndarray, seg_start: np.ndarray, seg_end: np.ndarray
+    ) -> Tuple[float, float]:
         """
-        Find nearest racing line point to given location.
-        Returns: (index, distance, nearest_point)
+        Calculate distance from point to line segment and projection distance along segment.
+        Returns: (perpendicular_distance, distance_along_segment)
         """
-        loc_2d = location[:2]
-        dist, idx = self.kdtree.query(loc_2d)
-        self._last_idx = idx
-        return idx, dist, self.locations_3d[idx]
+        seg_vec = seg_end - seg_start
+        seg_len = np.linalg.norm(seg_vec)
 
-    def get_progress(self, idx: int) -> float:
-        """Get progress along racing line (0 to total_length)."""
-        return self.cumulative_distances[idx]
+        if seg_len < 1e-9:
+            return np.linalg.norm(point - seg_start), 0.0
 
-    def get_delta_progress(self, old_idx: int, new_idx: int) -> float:
+        # Project point onto line, get parameter t
+        t = np.dot(point - seg_start, seg_vec) / (seg_len * seg_len)
+        t_clamped = np.clip(t, 0.0, 1.0)
+
+        # Closest point on segment
+        closest = seg_start + t_clamped * seg_vec
+        dist = np.linalg.norm(point - closest)
+
+        # Distance along segment (can be negative or > seg_len if outside segment)
+        dist_along = t * seg_len
+
+        return dist, dist_along
+
+    def trace_point(
+        self, point: np.ndarray, start_idx: int = 0
+    ) -> RacingLineProjection:
         """
-        Calculate progress made between two indices.
+        Trace a point to find the closest segment on the racing line.
+        Searches forward and backward from start_idx for efficiency.
+        Returns: RacingLineProjection with segment index and distance along segment.
+        """
+        point_2d = point[:2]
+        min_dist = float('inf')
+        best_idx = start_idx
+        best_dist_along = 0.0
+
+        # Search forward and backward from start_idx
+        search_range = int(math.ceil(self.num_points / 2)) + 2
+
+        for i in range(1, search_range):
+            # Forward segment
+            fwd_idx = (start_idx + i - 1) % self.num_points
+            fwd_next = (start_idx + i) % self.num_points
+            fwd_dist, fwd_along = self._point_to_segment_distance(
+                point_2d, self.locations[fwd_idx], self.locations[fwd_next]
+            )
+
+            if fwd_dist < min_dist:
+                min_dist = fwd_dist
+                best_idx = fwd_idx
+                best_dist_along = np.clip(fwd_along, 0.0, self._segment_lengths[fwd_idx])
+
+            # Backward segment
+            bwd_idx = (start_idx - i) % self.num_points
+            bwd_next = (start_idx - i + 1) % self.num_points
+            bwd_dist, bwd_along = self._point_to_segment_distance(
+                point_2d, self.locations[bwd_idx], self.locations[bwd_next]
+            )
+
+            if bwd_dist < min_dist:
+                min_dist = bwd_dist
+                best_idx = bwd_idx
+                best_dist_along = np.clip(bwd_along, 0.0, self._segment_lengths[bwd_idx])
+
+            # Early exit if we found an exact match
+            if min_dist < 1e-6:
+                break
+
+        return RacingLineProjection(best_idx, best_dist_along)
+
+    def total_distance_from_start(self, projection: RacingLineProjection) -> float:
+        """Get total distance from racing line start to this projection."""
+        return self._cumulative_distances[projection.segment_idx] + projection.distance_along_segment
+
+    def delta_distance_projection(
+        self,
+        origin: RacingLineProjection,
+        destination: RacingLineProjection
+    ) -> float:
+        """
+        Calculate signed distance traveled between two projections.
+        Positive = forward progress, negative = backward.
         Handles wraparound for closed tracks.
         """
-        delta = self.cumulative_distances[new_idx] - self.cumulative_distances[old_idx]
+        dist_origin = self.total_distance_from_start(origin)
+        dist_destination = self.total_distance_from_start(destination)
 
-        # Handle wraparound: if delta is very negative, we crossed the start line
-        if delta < -self.total_length / 2:
-            delta += self.total_length
-        # If delta is very positive (going backwards across start), make it negative
-        elif delta > self.total_length / 2:
-            delta -= self.total_length
+        delta = (dist_destination - dist_origin + self._total_length) % self._total_length
+
+        # If delta > half the track, we went backwards
+        if delta > self._total_length / 2:
+            delta -= self._total_length
 
         return delta
+
+    def get_interpolated_location(self, projection: RacingLineProjection) -> np.ndarray:
+        """Get the exact 3D location on the racing line at this projection."""
+        idx = projection.segment_idx
+        next_idx = (idx + 1) % self.num_points
+        seg_len = self._segment_lengths[idx]
+
+        if seg_len < 1e-9:
+            return self.locations_3d[idx].copy()
+
+        alpha = np.clip(projection.distance_along_segment / seg_len, 0.0, 1.0)
+        return (1 - alpha) * self.locations_3d[idx] + alpha * self.locations_3d[next_idx]
+
+    def get_distance_to_racing_line(
+        self, point: np.ndarray, projection: RacingLineProjection
+    ) -> float:
+        """Get perpendicular distance from point to the racing line at projection."""
+        interpolated = self.get_interpolated_location(projection)
+        return np.linalg.norm(point[:2] - interpolated[:2])
 
 
 class RoarRLSimEnv(RoarRLEnv):
@@ -118,10 +223,12 @@ class RoarRLSimEnv(RoarRLEnv):
 
         # Racing line tracking
         self.racing_line: Optional[RacingLineTracker] = None
-        self._racing_line_idx = 0
+        self._racing_line_projection: Optional[RacingLineProjection] = None
+        self._racing_line_dist = 0.0
         self._racing_line_delta_progress = 0.0
         if racing_line_path is not None:
             self.racing_line = RacingLineTracker(racing_line_path)
+            self._racing_line_projection = RacingLineProjection(0, 0.0)
             print(f"Loaded racing line with {self.racing_line.num_points} points, total length: {self.racing_line.total_length:.1f}m")
 
     @property
@@ -190,10 +297,10 @@ class RoarRLSimEnv(RoarRLEnv):
 
             if delta_progress <= 0:
                 # Going backwards: penalize more heavily
-                reward = delta_progress * 10.0 * (1.0 - 0.5 * proximity_factor)
+                reward = delta_progress * 20.0 * (1.0 - 0.5 * proximity_factor)
             else:
                 # Going forwards: reward scaled by proximity to racing line
-                reward = delta_progress * 10.0 * (0.5 + 0.5 * proximity_factor)
+                reward = delta_progress * 20.0 * (0.5 + 0.5 * proximity_factor)
 
             return reward
         else:
@@ -202,9 +309,9 @@ class RoarRLSimEnv(RoarRLEnv):
                 self.location_sensor.get_last_gym_observation() - self._traced_projection_point.location
             )
             if self._delta_distance_travelled <= 0:
-                normalized_rew = self._delta_distance_travelled * 10.0 * (0.2 * dist_to_projection + 1.0)
+                normalized_rew = self._delta_distance_travelled * 20.0 * (0.2 * dist_to_projection + 1.0)
             else:
-                normalized_rew = self._delta_distance_travelled * 10.0 / (0.2 * dist_to_projection + 1.0)
+                normalized_rew = self._delta_distance_travelled * 20.0 / (0.2 * dist_to_projection + 1.0)
             return normalized_rew
     
     def _perform_waypoint_trace(self, location: Optional[np.ndarray] = None) -> None:
@@ -217,11 +324,11 @@ class RoarRLSimEnv(RoarRLEnv):
 
         # Track racing line if available
         if self.racing_line is not None:
-            old_idx = self._racing_line_idx
-            new_idx, dist, _ = self.racing_line.get_nearest_point(location)
-            self._racing_line_idx = new_idx
-            self._racing_line_dist = dist
-            self._racing_line_delta_progress = self.racing_line.get_delta_progress(old_idx, new_idx)
+            old_projection = self._racing_line_projection
+            new_projection = self.racing_line.trace_point(location, old_projection.segment_idx)
+            self._racing_line_projection = new_projection
+            self._racing_line_dist = self.racing_line.get_distance_to_racing_line(location, new_projection)
+            self._racing_line_delta_progress = self.racing_line.delta_distance_projection(old_projection, new_projection)
 
     def _step(self, action: Any) -> None:
         self._perform_waypoint_trace()
@@ -230,9 +337,10 @@ class RoarRLSimEnv(RoarRLEnv):
         # Initialize racing line tracking before waypoint trace
         if self.racing_line is not None:
             location = self.location_sensor.get_last_gym_observation()
-            idx, dist, _ = self.racing_line.get_nearest_point(location)
-            self._racing_line_idx = idx
-            self._racing_line_dist = dist
+            self._racing_line_projection = self.racing_line.trace_point(location, 0)
+            self._racing_line_dist = self.racing_line.get_distance_to_racing_line(
+                location, self._racing_line_projection
+            )
             self._racing_line_delta_progress = 0.0
 
         self._perform_waypoint_trace()
