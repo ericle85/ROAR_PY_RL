@@ -26,7 +26,7 @@ TIME_LIMIT = RUN_FPS * 2 * 60
 run_name = "PPO_RacingLine_Reward"
 
 # Racing line path (relative to repo root)
-RACING_LINE_PATH = Path(__file__).parent.parent / "racingline" / "main.npz"
+RACING_LINE_PATH = r'C:\Users\shrek\ROAR_PY_RL\racingline\main.npz'
 
 training_params = dict(
     learning_rate=2.5e-4,
@@ -45,7 +45,7 @@ training_params = dict(
     target_kl=None,
     verbose=1,
     seed=1,
-    device=th.device('cuda' if th.cuda.is_available() else 'cpu'),
+    device='cuda',
 )
 
 def find_latest_model(root_path: Path) -> Optional[Path]:
@@ -82,7 +82,6 @@ def get_env(wandb_run) -> gym.Env:
 def main():
     wandb_run = wandb.init(
         project="ROAR_PY_RL",
-        entity="roar",
         name=run_name,
         sync_tensorboard=True,
         monitor_gym=True,
