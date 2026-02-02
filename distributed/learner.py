@@ -457,12 +457,26 @@ def main():
                 "clip_range": lambda _: 0.2,
                 "lr_schedule": lambda _: config.learning_rate,
             }
-            # Create dummy env for the loaded model
-            learner.obs_dim = 48  # Will be overwritten, but needed for env creation
-            env = DummyVecEnvWrapper(learner.obs_dim, learner.n_actions)
+            # First load without env to get the observation space
+            temp_model = PPO.load(checkpoint_path, device=learner.device, custom_objects=custom_objects)
+            obs_space = temp_model.observation_space
+            act_space = temp_model.action_space
+            del temp_model
+
+            # Create dummy env with matching observation space
+            env = DummyVecEnv([lambda: type('Env', (), {
+                'observation_space': obs_space,
+                'action_space': act_space,
+                'reset': lambda self, **kw: (np.zeros(obs_space.shape, dtype=np.float32), {}),
+                'step': lambda self, a: (np.zeros(obs_space.shape, dtype=np.float32), 0.0, False, False, {}),
+            })()])
+
+            # Now load with the matching env
             learner.model = PPO.load(checkpoint_path, env=env, device=learner.device, custom_objects=custom_objects)
             learner.obs_dim = learner.model.observation_space.shape[0]
-            # Set up logger and rollout buffer for training
+            learner.n_actions = learner.model.action_space.n
+
+            # Set up logger for training
             learner._setup_model_logger(learner.model, learner.run_name)
             learner._broadcast_policy()
             logger.info("Checkpoint loaded and broadcast to workers")
