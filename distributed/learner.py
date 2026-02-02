@@ -276,7 +276,7 @@ class Learner:
         self,
         config: Config,
         num_workers: int,
-        obs_dim: int = 94,  # Default from ROAR env
+        obs_dim: int = None,  # Auto-detect from first rollout if None
         n_actions: int = 9,  # Default discrete actions
     ):
         """
@@ -285,13 +285,14 @@ class Learner:
         Args:
             config: Configuration object
             num_workers: Expected number of workers
-            obs_dim: Observation dimension
+            obs_dim: Observation dimension (auto-detected if None)
             n_actions: Number of discrete actions
         """
         self.config = config
         self.num_workers = num_workers
-        self.obs_dim = obs_dim
+        self.obs_dim = obs_dim  # Will be set from first rollout if None
         self.n_actions = n_actions
+        self._model_initialized = False
 
         # Determine device
         if th.cuda.is_available():
