@@ -214,21 +214,25 @@ class PolicyChannel:
 
     def _listen_loop(self):
         """Background thread that listens for policy updates."""
-        for message in self._pubsub.listen():
-            if not self._running:
-                break
+        try:
+            for message in self._pubsub.listen():
+                if not self._running:
+                    break
 
-            if message["type"] != "message":
-                continue
+                if message["type"] != "message":
+                    continue
 
-            try:
-                weights = PolicyWeights.deserialize(message["data"])
-                self._latest_weights = weights
+                try:
+                    weights = PolicyWeights.deserialize(message["data"])
+                    self._latest_weights = weights
 
-                if self._callback is not None:
-                    self._callback(weights)
-            except Exception as e:
-                print(f"Error deserializing policy weights: {e}")
+                    if self._callback is not None:
+                        self._callback(weights)
+                except Exception as e:
+                    print(f"Error deserializing policy weights: {e}")
+        except (OSError, ValueError, redis.ConnectionError):
+            # Socket closed during unsubscribe - this is expected
+            pass
 
     def get_update(self) -> Optional[PolicyWeights]:
         """
