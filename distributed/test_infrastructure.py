@@ -14,8 +14,20 @@ Usage:
 """
 
 import argparse
+import os
 import sys
 import time
+
+# Add repo root to path for imports
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, REPO_ROOT)
+
+# Verify we can find the distributed module
+if not os.path.exists(os.path.join(REPO_ROOT, "distributed", "__init__.py")):
+    print(f"ERROR: Cannot find distributed module at {REPO_ROOT}")
+    print("Make sure you're running from the ROAR_PY_RL directory")
+    sys.exit(1)
+
 import numpy as np
 
 # Test results tracking
