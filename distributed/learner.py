@@ -27,6 +27,7 @@ import wandb
 from stable_baselines3 import PPO
 from stable_baselines3.common.buffers import RolloutBuffer
 from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.logger import configure
 
 # Add parent directory to path for imports
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -171,8 +172,20 @@ class Learner:
             device=self.device,
         )
 
+        # Configure logger for SB3 (required for train())
+        run_name = getattr(self, 'run_name', 'distributed')
+        self._setup_model_logger(model, run_name)
+
         logger.info(f"Model created on {self.device}")
         return model
+
+    def _setup_model_logger(self, model: PPO, run_name: str = "distributed") -> None:
+        """Set up SB3 logger for the model with tensorboard support."""
+        # Configure logger with tensorboard (same as main branch)
+        log_dir = f"runs/{run_name}"
+        sb3_logger = configure(folder=log_dir, format_strings=["stdout", "tensorboard"])
+        model.set_logger(sb3_logger)
+        logger.info(f"Tensorboard logging to: {log_dir}")
 
     def _get_policy_weights(self) -> PolicyWeights:
         """Get current policy weights for broadcasting."""
@@ -240,19 +253,22 @@ class Learner:
         self.rollout_queue.clear()
         self.policy_channel.clear()
 
-        # Model will be created after we know obs_dim (from first rollout if not specified)
-        if self.obs_dim is not None:
-            self.model = self._create_model()
-
+        # Initialize wandb first (needed for run_name in logger setup)
+        self.run_name = f"distributed_{self.num_workers}workers"
         self.wandb_run = wandb.init(
             project=self.config.wandb_project,
-            name=f"distributed_{self.num_workers}workers",
+            name=self.run_name,
+            sync_tensorboard=True,  # Sync tensorboard logs to wandb (like main branch)
             config={
                 "num_workers": self.num_workers,
                 "obs_dim": self.obs_dim,
                 **self.config.get_ppo_params(),
             },
         )
+
+        # Model will be created after we know obs_dim (from first rollout if not specified)
+        if self.obs_dim is not None:
+            self.model = self._create_model()
 
         self._running = True
         logger.info("Learner started successfully")
@@ -441,8 +457,13 @@ def main():
                 "clip_range": lambda _: 0.2,
                 "lr_schedule": lambda _: config.learning_rate,
             }
-            learner.model = PPO.load(checkpoint_path, device=learner.device, custom_objects=custom_objects)
+            # Create dummy env for the loaded model
+            learner.obs_dim = 48  # Will be overwritten, but needed for env creation
+            env = DummyVecEnvWrapper(learner.obs_dim, learner.n_actions)
+            learner.model = PPO.load(checkpoint_path, env=env, device=learner.device, custom_objects=custom_objects)
             learner.obs_dim = learner.model.observation_space.shape[0]
+            # Set up logger and rollout buffer for training
+            learner._setup_model_logger(learner.model, learner.run_name)
             learner._broadcast_policy()
             logger.info("Checkpoint loaded and broadcast to workers")
 
