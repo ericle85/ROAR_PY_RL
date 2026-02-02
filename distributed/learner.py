@@ -83,23 +83,32 @@ def find_latest_model(root_path: Path) -> Optional[Path]:
     return latest
 
 
-class DummyVecEnvWrapper(DummyVecEnv):
-    """
-    Wrapper to create a VecEnv compatible with SB3 from observation/action spaces.
-    """
+class DummyEnv(gym.Env):
+    """Dummy environment for learner that matches given obs/action spaces."""
 
-    def __init__(self, obs_dim: int, n_actions: int):
-        def make_env():
-            env = gym.Env()
-            env.observation_space = gym.spaces.Box(
-                low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32
-            )
-            env.action_space = gym.spaces.Discrete(n_actions)
-            env.reset = lambda **kwargs: (np.zeros(obs_dim, dtype=np.float32), {})
-            env.step = lambda a: (np.zeros(obs_dim, dtype=np.float32), 0.0, False, False, {})
-            return env
+    def __init__(self, observation_space, action_space):
+        super().__init__()
+        self.observation_space = observation_space
+        self.action_space = action_space
 
-        super().__init__([make_env])
+    def reset(self, **kwargs):
+        return np.zeros(self.observation_space.shape, dtype=np.float32), {}
+
+    def step(self, action):
+        return np.zeros(self.observation_space.shape, dtype=np.float32), 0.0, False, False, {}
+
+
+def make_dummy_vec_env(obs_dim: int = None, n_actions: int = None,
+                       observation_space=None, action_space=None) -> DummyVecEnv:
+    """Create a DummyVecEnv with given spaces."""
+    if observation_space is None:
+        observation_space = gym.spaces.Box(
+            low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32
+        )
+    if action_space is None:
+        action_space = gym.spaces.Discrete(n_actions)
+
+    return DummyVecEnv([lambda: DummyEnv(observation_space, action_space)])
 
 
 @dataclass
@@ -163,7 +172,7 @@ class Learner:
         logger.info(f"Creating PPO model (obs_dim={self.obs_dim}, n_actions={self.n_actions})...")
 
         # Create dummy vec env for model initialization
-        env = DummyVecEnvWrapper(self.obs_dim, self.n_actions)
+        env = make_dummy_vec_env(obs_dim=self.obs_dim, n_actions=self.n_actions)
 
         model = PPO(
             "MlpPolicy",
@@ -464,12 +473,7 @@ def main():
             del temp_model
 
             # Create dummy env with matching observation space
-            env = DummyVecEnv([lambda: type('Env', (), {
-                'observation_space': obs_space,
-                'action_space': act_space,
-                'reset': lambda self, **kw: (np.zeros(obs_space.shape, dtype=np.float32), {}),
-                'step': lambda self, a: (np.zeros(obs_space.shape, dtype=np.float32), 0.0, False, False, {}),
-            })()])
+            env = make_dummy_vec_env(observation_space=obs_space, action_space=act_space)
 
             # Now load with the matching env
             learner.model = PPO.load(checkpoint_path, env=env, device=learner.device, custom_objects=custom_objects)
