@@ -279,6 +279,7 @@ class RoarRLSimEnv(RoarRLEnv):
 
         # Previous action for observation (throttle, steer)
         self._prev_action = np.zeros(2, dtype=np.float32)
+        self._action_smoothness_penalty = 0.0
 
     @property
     def observation_space(self) -> gym.Space:
@@ -379,7 +380,10 @@ class RoarRLSimEnv(RoarRLEnv):
             # 3. Small progress bonus - reward forward movement
             progress_reward = delta_progress * 5.0 if delta_progress > 0 else delta_progress * 10.0
 
-            reward = velocity_reward + line_penalty + progress_reward
+            # 4. Smoothness penalty - penalize jerky steering
+            smoothness_penalty = -0.1 * self._action_smoothness_penalty
+
+            reward = velocity_reward + line_penalty + progress_reward + smoothness_penalty
             return reward
         else:
             # Fallback: original waypoint-based reward
@@ -409,7 +413,7 @@ class RoarRLSimEnv(RoarRLEnv):
             self._racing_line_delta_progress = self.racing_line.delta_distance_projection(old_projection, new_projection)
 
     def _step(self, action: Any) -> None:
-        # Store action for next observation (extract throttle/steer from dict)
+        # Extract throttle/steer from dict
         if isinstance(action, dict):
             throttle = float(action.get("throttle", 0.0))
             steer = float(action.get("steer", 0.0))
@@ -418,7 +422,14 @@ class RoarRLSimEnv(RoarRLEnv):
                 throttle = float(throttle[0]) if len(throttle) > 0 else 0.0
             if hasattr(steer, "__len__"):
                 steer = float(steer[0]) if len(steer) > 0 else 0.0
-            self._prev_action = np.array([throttle, steer], dtype=np.float32)
+            current_action = np.array([throttle, steer], dtype=np.float32)
+
+            # Compute steering smoothness penalty BEFORE updating prev_action
+            steer_change = current_action[1] - self._prev_action[1]
+            self._action_smoothness_penalty = steer_change ** 2
+
+            # Now update prev_action for next step
+            self._prev_action = current_action
         self._perform_waypoint_trace()
 
     def _reset(self) -> None:
@@ -434,6 +445,7 @@ class RoarRLSimEnv(RoarRLEnv):
         self._perform_waypoint_trace()
         self._delta_distance_travelled = 0.0
         self._prev_action = np.zeros(2, dtype=np.float32)
+        self._action_smoothness_penalty = 0.0
 
     def is_terminated(self, observation : Any, action : Any, info_dict : Dict[str, Any]) -> bool:
         collision_impulse : np.ndarray = self.collision_sensor.get_last_gym_observation()
