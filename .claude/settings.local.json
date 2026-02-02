@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "Bash(python3:*)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(tree:*)",
+      "Bash(xargs:*)",
+      "Bash(find:*)",
+      "Bash(git -C /Users/ericle/ROAR_PY_RL log --oneline multiworker -20)",
+      "Bash(git -C /Users/ericle/ROAR_PY_RL diff main..multiworker --stat)",
+      "Bash(git -C /Users/ericle/ROAR_PY_RL show:*)"
     ]
   }
 }

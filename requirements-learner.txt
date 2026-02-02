@@ -1,0 +1,23 @@
+# Requirements for distributed learner (Python 3.11+)
+# Learner aggregates rollouts and trains PPO on GPU
+
+# Core RL
+gymnasium
+stable-baselines3>=2.1.0
+numpy>=1.24.0
+
+# Redis communication
+redis
+msgpack
+msgpack-numpy
+
+# PyTorch with CUDA support (RTX 5070ti)
+# Install from: https://pytorch.org/get-started/locally/
+# pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+torch>=2.1.0+cu130
+torchvision>=0.16.0+cu130
+
+# Logging
+wandb
+
+# Note: CARLA is NOT needed for learner - it only trains from rollout data

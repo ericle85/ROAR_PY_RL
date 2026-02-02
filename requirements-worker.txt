@@ -1,0 +1,24 @@
+# Requirements for distributed worker (Python 3.8)
+# Workers run CARLA environment and collect rollouts
+
+# Core RL
+gymnasium
+stable-baselines3==2.1.0
+numpy<2
+
+# Redis communication
+redis
+msgpack
+msgpack-numpy
+
+# CARLA (must match your CARLA server version)
+carla==0.9.12
+
+# Async support
+nest-asyncio
+
+# Logging
+wandb
+
+# ROAR dependencies (install from local)
+# pip install -e .
