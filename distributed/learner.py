@@ -217,10 +217,10 @@ class Learner:
                 )
 
         # Compute returns and advantages using last values from rollouts
-        # Use the last rollout's final value for bootstrapping
+        # SB3 expects numpy arrays, not torch tensors
         last_rollout = rollouts[-1]
-        last_values = th.tensor(last_rollout.last_values).to(self.device)
-        last_dones = th.tensor(last_rollout.last_dones.astype(np.float32)).to(self.device)
+        last_values = last_rollout.last_values  # numpy array
+        last_dones = last_rollout.last_dones.astype(np.float32)  # numpy array
 
         buffer.compute_returns_and_advantage(last_values=last_values, dones=last_dones)
 
