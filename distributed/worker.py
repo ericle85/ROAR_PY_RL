@@ -210,6 +210,9 @@ class Worker:
         config: Config,
         carla_exe_path: str,
         racing_line_path: str,
+        record_video: bool = False,
+        video_dir: str = "videos",
+        video_freq: int = 20000,
     ):
         """
         Initialize worker.
@@ -219,11 +222,17 @@ class Worker:
             config: Configuration object
             carla_exe_path: Path to CARLA executable
             racing_line_path: Path to racing line NPZ file
+            record_video: Whether to record episode videos
+            video_dir: Directory to save videos
+            video_freq: Record video every N steps
         """
         self.worker_id = worker_id
         self.config = config
         self.carla_exe_path = carla_exe_path
         self.racing_line_path = racing_line_path
+        self.record_video = record_video
+        self.video_dir = video_dir
+        self.video_freq = video_freq
 
         # Calculate port for this worker
         self.carla_port = config.get_carla_port(worker_id)
@@ -262,6 +271,17 @@ class Worker:
         env = gym.wrappers.TimeLimit(env, max_episode_steps=self.config.time_limit_steps)
         env = gym.wrappers.RecordEpisodeStatistics(env)
 
+        # Optional video recording
+        if self.record_video:
+            video_folder = f"{self.video_dir}/worker_{self.worker_id}"
+            logger.info(f"Recording videos to {video_folder} every {self.video_freq} steps")
+            env = gym.wrappers.RecordVideo(
+                env,
+                video_folder,
+                step_trigger=lambda x: x % self.video_freq == 0,
+                name_prefix=f"worker{self.worker_id}"
+            )
+
         logger.info(f"Environment initialized. Obs shape: {env.observation_space.shape}, "
                     f"Action space: {env.action_space}")
 
@@ -296,7 +316,18 @@ class Worker:
             # Convert numpy arrays back to torch tensors
             state_dict = {}
             for key, value in weights.state_dict.items():
-                state_dict[key] = th.from_numpy(value)
+                state_dict[key] = th.from_numpy(value.copy())  # copy to make writable
+
+            # Verify shapes match before loading
+            current_state = self.model.policy.state_dict()
+            for key in state_dict:
+                if key in current_state:
+                    if state_dict[key].shape != current_state[key].shape:
+                        logger.warning(
+                            f"Shape mismatch for {key}: received {state_dict[key].shape}, "
+                            f"expected {current_state[key].shape}. Skipping policy update."
+                        )
+                        return False
 
             # Load into model
             self.model.policy.load_state_dict(state_dict)
@@ -550,6 +581,23 @@ def main():
         help="Steps per rollout",
     )
     parser.add_argument(
+        "--record-video",
+        action="store_true",
+        help="Record episode videos",
+    )
+    parser.add_argument(
+        "--video-dir",
+        type=str,
+        default="videos",
+        help="Directory to save videos",
+    )
+    parser.add_argument(
+        "--video-freq",
+        type=int,
+        default=20000,
+        help="Record video every N steps",
+    )
+    parser.add_argument(
         "--log-level",
         type=str,
         default="INFO",
@@ -581,6 +629,9 @@ def main():
         config=config,
         carla_exe_path=args.carla_exe,
         racing_line_path=args.racing_line,
+        record_video=args.record_video,
+        video_dir=args.video_dir,
+        video_freq=args.video_freq,
     )
 
     # Handle signals

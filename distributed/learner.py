@@ -40,6 +40,54 @@ from distributed.redis_client import RolloutQueue, PolicyChannel, RedisHealthChe
 logger = logging.getLogger(__name__)
 
 
+def find_latest_model(root_path: Path) -> Optional[Path]:
+    """
+    Find the latest model checkpoint in a directory.
+
+    Compatible with the original train_online.py checkpoint structure:
+    models/{run_name}/logs/rl_model_XXXXX_steps.zip
+
+    Args:
+        root_path: Path to model directory (e.g., models/PPO_Discrete_RacingLine)
+
+    Returns:
+        Path to latest checkpoint, or None if not found
+    """
+    logs_path = root_path / "logs"
+    if not logs_path.exists():
+        # Try root_path directly (for distributed checkpoints)
+        logs_path = root_path
+
+    if not logs_path.exists():
+        logger.warning(f"No model directory found at {root_path}")
+        return None
+
+    # Find all .zip files
+    model_files = list(logs_path.glob("*.zip"))
+    if not model_files:
+        logger.warning(f"No model files found in {logs_path}")
+        return None
+
+    # Try to extract step numbers from filenames
+    # Format: rl_model_XXXXX_steps.zip or ppo_step_XXXXX.zip
+    def extract_steps(path: Path) -> int:
+        name = path.stem
+        parts = name.split("_")
+        for i, part in enumerate(parts):
+            if part.isdigit():
+                return int(part)
+            # Handle "stepXXXXX" format
+            if part.startswith("step") and part[4:].isdigit():
+                return int(part[4:])
+        return 0
+
+    # Sort by step number and return latest
+    model_files.sort(key=extract_steps)
+    latest = model_files[-1]
+    logger.info(f"Found latest model: {latest}")
+    return latest
+
+
 class DummyEnv(gym.Env):
     """
     Dummy environment for learner that doesn't actually interact with CARLA.
@@ -687,7 +735,13 @@ def main():
         "--resume",
         type=str,
         default=None,
-        help="Path to checkpoint to resume from",
+        help="Path to specific checkpoint file to resume from",
+    )
+    parser.add_argument(
+        "--models-dir",
+        type=str,
+        default=None,
+        help="Path to models directory (e.g., models/PPO_Discrete_RacingLine) - auto-finds latest",
     )
     parser.add_argument(
         "--log-level",
@@ -734,11 +788,21 @@ def main():
 
     # Start and run
     if learner.start():
-        # Load checkpoint if resuming
+        # Determine checkpoint to load
+        checkpoint_path = None
         if args.resume is not None:
-            logger.info(f"Loading checkpoint from {args.resume}")
-            learner.model = PPO.load(args.resume, device=learner.device)
+            checkpoint_path = Path(args.resume)
+        elif args.models_dir is not None:
+            checkpoint_path = find_latest_model(Path(args.models_dir))
+
+        # Load checkpoint if available
+        if checkpoint_path is not None and checkpoint_path.exists():
+            logger.info(f"Loading checkpoint from {checkpoint_path}")
+            learner.model = PPO.load(checkpoint_path, device=learner.device)
             learner._broadcast_policy()
+            logger.info("Checkpoint loaded and broadcast to workers")
+        elif checkpoint_path is not None:
+            logger.warning(f"Checkpoint not found: {checkpoint_path}")
 
         learner.run()
     else:
