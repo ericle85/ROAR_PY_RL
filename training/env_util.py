@@ -98,7 +98,7 @@ async def initialize_roar_env(
     image_width : int = 400,
     image_height : int = 200,
     racing_line_path : str = None,
-    use_discrete_actions : bool = False,
+    use_discrete_actions : bool = False,  # Default to continuous for SAC
     action_lut : np.ndarray = None
 ):
     carla_client = carla.Client(carla_host, carla_port)

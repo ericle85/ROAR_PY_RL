@@ -1,7 +1,7 @@
 import gymnasium as gym
 from gymnasium.core import Env
 import numpy as np
-from stable_baselines3 import SAC 
+from stable_baselines3 import SAC
 from stable_baselines3.ppo.ppo import PPO
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, VecVideoRecorder
@@ -23,25 +23,25 @@ SUBSTEPS_PER_STEP = 5
 MODEL_SAVE_FREQ = 50_000
 VIDEO_SAVE_FREQ = 20_000
 TIME_LIMIT = RUN_FPS * 2 * 60
-USE_DISCRETE_ACTIONS = True  # Use discrete action LUT (like RLGym)
-run_name = "PPO_Discrete_RacingLine"
+USE_DISCRETE_ACTIONS = False  # Use continuous actions for SAC
+run_name = "SAC_Continuous_RacingLine"
 
 # Racing line path (relative to repo root)
 RACING_LINE_PATH = r'C:\Users\shrek\ROAR_PY_RL\racingline\main.npz'
 
+# SAC training parameters
 training_params = dict(
-    learning_rate=2.5e-4,
-    n_steps=2048,  # rollout buffer size
-    batch_size=64,  # minibatch size
-    n_epochs=10,
+    learning_rate=3e-4,
+    buffer_size=1_000_000,  # replay buffer size
+    learning_starts=10_000,  # start training after this many steps
+    batch_size=256,
+    tau=0.005,  # soft update coefficient
     gamma=0.99,
-    gae_lambda=0.95,
-    clip_range=0.2,
-    clip_range_vf=None,
-    ent_coef=0.01,  # entropy coefficient for exploration
-    vf_coef=0.5,
-    max_grad_norm=0.5,
-    target_kl=None,
+    train_freq=1,  # update policy every step
+    gradient_steps=1,  # gradient steps per update
+    ent_coef='auto',  # automatic entropy tuning
+    target_update_interval=1,
+    target_entropy='auto',
     verbose=1,
     seed=1,
     device='cpu',
@@ -97,7 +97,7 @@ def main():
     
     if latest_model_path is None:
         # create new models
-        model = PPO(
+        model = SAC(
             "MlpPolicy",
             env,
             tensorboard_log=f"runs/{wandb_run.name}",
@@ -106,7 +106,7 @@ def main():
     else:
         # Load the model
         print(f"reloading from {type(latest_model_path)} {latest_model_path}\n\n\n\n")
-        model = PPO.load(
+        model = SAC.load(
             latest_model_path,
             env=env,
             tensorboard_log=f"runs/{wandb_run.name}",
