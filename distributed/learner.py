@@ -482,7 +482,15 @@ def main():
 
             # Ensure rollout buffer matches our config's n_steps (loaded model may differ)
             learner.model.n_steps = config.n_steps
-            learner.model._setup_rollout_buffer()
+            learner.model.rollout_buffer = RolloutBuffer(
+                buffer_size=config.n_steps,
+                observation_space=learner.model.observation_space,
+                action_space=learner.model.action_space,
+                device=learner.device,
+                n_envs=1,
+                gamma=config.gamma,
+                gae_lambda=config.gae_lambda,
+            )
             logger.info(f"Rollout buffer recreated with n_steps={config.n_steps}")
 
             # Set up logger for training
