@@ -480,6 +480,11 @@ def main():
             learner.obs_dim = learner.model.observation_space.shape[0]
             learner.n_actions = learner.model.action_space.n
 
+            # Ensure rollout buffer matches our config's n_steps (loaded model may differ)
+            learner.model.n_steps = config.n_steps
+            learner.model._setup_rollout_buffer()
+            logger.info(f"Rollout buffer recreated with n_steps={config.n_steps}")
+
             # Set up logger for training
             learner._setup_model_logger(learner.model, learner.run_name)
             learner._broadcast_policy()
