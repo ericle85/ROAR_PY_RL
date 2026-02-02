@@ -8,7 +8,8 @@
       "Bash(find:*)",
       "Bash(git -C /Users/ericle/ROAR_PY_RL log --oneline multiworker -20)",
       "Bash(git -C /Users/ericle/ROAR_PY_RL diff main..multiworker --stat)",
-      "Bash(git -C /Users/ericle/ROAR_PY_RL show:*)"
+      "Bash(git -C /Users/ericle/ROAR_PY_RL show:*)",
+      "Bash(git status:*)"
     ]
   }
 }
