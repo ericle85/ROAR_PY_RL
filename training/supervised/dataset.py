@@ -2,7 +2,7 @@
 
 import glob
 import os
-from typing import Tuple
+from typing import List, Tuple, Union
 
 import numpy as np
 import torch
@@ -13,24 +13,34 @@ class ExpertDataset(Dataset):
     """Dataset for expert demonstration data stored in .npz files.
 
     Args:
-        data_dir: Directory containing .npz files with 'observations' and 'actions' arrays.
+        data_dirs: Directory or list of directories containing .npz files
+            with 'observations' and 'actions' arrays.
     """
 
-    def __init__(self, data_dir: str = "training/expert_data"):
-        self.data_dir = data_dir
+    def __init__(self, data_dirs: Union[str, List[str]] = "training/expert_data"):
+        # Normalize to list
+        if isinstance(data_dirs, str):
+            data_dirs = [data_dirs]
 
-        # Load all .npz files
-        npz_files = sorted(glob.glob(os.path.join(data_dir, "*.npz")))
-        if not npz_files:
-            raise ValueError(f"No .npz files found in {data_dir}")
+        self.data_dirs = data_dirs
 
+        # Load all .npz files from all directories
         observations_list = []
         actions_list = []
+        total_files = 0
 
-        for npz_file in npz_files:
-            data = np.load(npz_file)
-            observations_list.append(data["observations"])
-            actions_list.append(data["actions"])
+        for data_dir in data_dirs:
+            npz_files = sorted(glob.glob(os.path.join(data_dir, "*.npz")))
+            if npz_files:
+                print(f"Loading from {data_dir}: {len(npz_files)} files")
+                for npz_file in npz_files:
+                    data = np.load(npz_file)
+                    observations_list.append(data["observations"])
+                    actions_list.append(data["actions"])
+                total_files += len(npz_files)
+
+        if total_files == 0:
+            raise ValueError(f"No .npz files found in {data_dirs}")
 
         # Concatenate all data
         self.observations = torch.from_numpy(
@@ -44,7 +54,7 @@ class ExpertDataset(Dataset):
             f"Observation count ({len(self.observations)}) != action count ({len(self.actions)})"
         )
 
-        print(f"Loaded {len(self)} transitions from {len(npz_files)} files")
+        print(f"Loaded {len(self)} transitions from {total_files} files")
         print(f"Observation shape: {self.observations.shape}")
         print(f"Action shape: {self.actions.shape}")
 
