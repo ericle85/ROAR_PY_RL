@@ -37,7 +37,11 @@ class ExpertDataset(Dataset):
         total_files = 0
 
         for data_dir in data_dirs:
-            npz_files = sorted(glob.glob(os.path.join(data_dir, "*.npz")))
+            # Recursively find all .npz files in data_dir and subdirectories
+            npz_files = sorted(glob.glob(os.path.join(data_dir, "**/*.npz"), recursive=True))
+            # Also include files directly in data_dir
+            npz_files += sorted(glob.glob(os.path.join(data_dir, "*.npz")))
+            npz_files = sorted(set(npz_files))  # Remove duplicates and sort
             if npz_files:
                 print(f"Loading from {data_dir}: {len(npz_files)} files")
                 for npz_file in npz_files:
