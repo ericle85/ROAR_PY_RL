@@ -33,7 +33,7 @@ RACING_LINE_PATH = r'C:\Users\shrek\ROAR_PY_RL\racingline\main.npz'
 training_params = dict(
     learning_rate=3e-4,
     buffer_size=1_000_000,  # replay buffer size
-    learning_starts=10_000,  # start training after this many steps
+    learning_starts=0,  # reduced for pretrained policy (was 10_000)
     batch_size=256,
     tau=0.005,  # soft update coefficient
     gamma=0.99,
@@ -118,6 +118,11 @@ def main():
             actor_state['latent_pi.2.bias'] = bc_weights['network.2.bias']
             actor_state['mu.weight'] = bc_weights['network.4.weight']
             actor_state['mu.bias'] = bc_weights['network.4.bias']
+
+            # Reduce initial exploration noise (log_std controls stochasticity)
+            # Lower value = more deterministic = use pretrained policy more
+            actor_state['log_std'] = th.full_like(actor_state['log_std'], -2.0)
+
             model.actor.load_state_dict(actor_state)
             print(f"Loaded pretrained BC weights from {bc_path}")
         else:
