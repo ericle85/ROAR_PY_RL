@@ -133,3 +133,5 @@ dmypy.json
 
 
 runs/
+training/supervised/checkpoints/best_model.pt
+training/supervised/checkpoints/final_model.pt

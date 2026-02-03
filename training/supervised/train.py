@@ -3,7 +3,7 @@
 import argparse
 import os
 import time
-from typing import Optional
+from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -62,6 +62,12 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Wandb run name (optional)",
     )
+    parser.add_argument(
+        "--acc-threshold",
+        type=float,
+        default=0.075,
+        help="Threshold for accuracy metric (predictions within this of expert)",
+    )
 
     return parser.parse_args()
 
@@ -103,14 +109,24 @@ def validate(
     val_loader,
     criterion: nn.Module,
     device: torch.device,
-) -> float:
+    threshold: float = 0.1,
+) -> Tuple[float, float]:
     """Validate the model.
 
+    Args:
+        model: The policy model.
+        val_loader: Validation data loader.
+        criterion: Loss function.
+        device: Torch device.
+        threshold: Threshold for accuracy metric.
+
     Returns:
-        Average validation loss.
+        Tuple of (average validation loss, threshold accuracy).
     """
     model.eval()
     total_loss = 0.0
+    total_correct = 0
+    total_samples = 0
     num_batches = 0
 
     with torch.no_grad():
@@ -121,10 +137,19 @@ def validate(
             pred_actions = model(obs)
             loss = criterion(pred_actions, actions)
 
+            # Threshold accuracy: all action dimensions within threshold
+            within_threshold = (pred_actions - actions).abs() <= threshold
+            correct = within_threshold.all(dim=1).sum().item()
+
             total_loss += loss.item()
+            total_correct += correct
+            total_samples += obs.size(0)
             num_batches += 1
 
-    return total_loss / num_batches
+    avg_loss = total_loss / num_batches
+    accuracy = total_correct / total_samples
+
+    return avg_loss, accuracy
 
 
 def main():
@@ -160,6 +185,7 @@ def main():
                     "val_split": args.val_split,
                     "seed": args.seed,
                     "patience": args.patience,
+                    "acc_threshold": args.acc_threshold,
                 },
             )
         except ImportError:
@@ -202,7 +228,7 @@ def main():
 
     for epoch in range(1, args.epochs + 1):
         train_loss = train_epoch(model, train_loader, optimizer, criterion, device)
-        val_loss = validate(model, val_loader, criterion, device)
+        val_loss, val_acc = validate(model, val_loader, criterion, device, args.acc_threshold)
 
         # Log metrics
         if args.wandb and wandb_run is not None:
@@ -213,10 +239,11 @@ def main():
                     "epoch": epoch,
                     "train_loss": train_loss,
                     "val_loss": val_loss,
+                    "val_acc": val_acc,
                 }
             )
 
-        print(f"Epoch {epoch:3d} | Train Loss: {train_loss:.6f} | Val Loss: {val_loss:.6f}")
+        print(f"Epoch {epoch:3d} | Train Loss: {train_loss:.6f} | Val Loss: {val_loss:.6f} | Val Acc: {val_acc:.4f}")
 
         # Check for improvement
         if val_loss < best_val_loss:
@@ -233,11 +260,12 @@ def main():
                     "optimizer_state_dict": optimizer.state_dict(),
                     "train_loss": train_loss,
                     "val_loss": val_loss,
+                    "val_acc": val_acc,
                     "config": model.get_config(),
                 },
                 checkpoint_path,
             )
-            print(f"  -> Saved best model (val_loss: {val_loss:.6f})")
+            print(f"  -> Saved best model (val_loss: {val_loss:.6f}, val_acc: {val_acc:.4f})")
         else:
             patience_counter += 1
             if patience_counter >= args.patience:
@@ -258,6 +286,7 @@ def main():
             "optimizer_state_dict": optimizer.state_dict(),
             "train_loss": train_loss,
             "val_loss": val_loss,
+            "val_acc": val_acc,
             "config": model.get_config(),
         },
         final_checkpoint_path,
