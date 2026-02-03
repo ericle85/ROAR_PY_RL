@@ -18,18 +18,30 @@ class FlattenActionWrapper(gym.ActionWrapper):
         return gym.spaces.unflatten(self.env.action_space, action)
     
 class RoarRLCarlaSimEnv(RoarRLSimEnv):
+    # Class variable to control spawn behavior
+    # Set to 0 to spawn at waypoint 0, None for random spawn point
+    spawn_waypoint_idx: Optional[int] = None
+
     def reset_vehicle(self) -> None:
         # assert isinstance(self.roar_py_actor, RoarPyCarlaVehicle)
         # assert isinstance(self.roar_py_world, RoarPyCarlaWorld)
         vehicle : RoarPyCarlaVehicle = self.roar_py_actor
 
-        spawn_points = self.roar_py_world.spawn_points
-        next_spawn_loc, next_spawn_rpy = spawn_points[np.random.randint(len(spawn_points))]
-        next_spawn_loc, next_spawn_rpy = next_spawn_loc.copy(), next_spawn_rpy.copy()
+        if self.spawn_waypoint_idx is not None:
+            # Spawn at specific waypoint
+            spawn_wp = self.manuverable_waypoints[self.spawn_waypoint_idx % len(self.manuverable_waypoints)]
+            next_spawn_loc = spawn_wp.location.copy()
+            next_spawn_rpy = spawn_wp.roll_pitch_yaw.copy()
+            next_spawn_loc += np.array([0, 0, 0.5])  # Lift slightly above ground
+        else:
+            # Random spawn point
+            spawn_points = self.roar_py_world.spawn_points
+            next_spawn_loc, next_spawn_rpy = spawn_points[np.random.randint(len(spawn_points))]
+            next_spawn_loc, next_spawn_rpy = next_spawn_loc.copy(), next_spawn_rpy.copy()
 
-        rotated_extent = vehicle.bounding_box.extent.copy()
-        rotated_extent = np.linalg.inv(tr3d.euler.euler2mat(*vehicle.get_roll_pitch_yaw())) @ rotated_extent
-        next_spawn_loc += np.array([0,0,rotated_extent[2]+0.2])
+            rotated_extent = vehicle.bounding_box.extent.copy()
+            rotated_extent = np.linalg.inv(tr3d.euler.euler2mat(*vehicle.get_roll_pitch_yaw())) @ rotated_extent
+            next_spawn_loc += np.array([0,0,rotated_extent[2]+0.2])
 
         print(f"Resetting vehicle to {next_spawn_loc} {next_spawn_rpy}")
 

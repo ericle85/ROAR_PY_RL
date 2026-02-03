@@ -79,13 +79,7 @@ class ExpertPolicyWrapper:
         await self.expert.initialize()
         self._initialized = True
 
-        # Debug: print expert state
-        loc = sensors['location_sensor'].get_last_gym_observation()
-        print(f"Expert policy initialized successfully")
-        print(f"  Vehicle location: {loc}")
-        print(f"  Expert waypoint count: {len(self.expert.maneuverable_waypoints)}")
-        print(f"  Expert current_waypoint_idx: {self.expert.current_waypoint_idx}")
-        print(f"  Expert apply_action: {self.expert.apply_action}")
+        print(f"Expert policy initialized at waypoint {self.expert.current_waypoint_idx}")
 
     def initialize_sync(self):
         """Synchronous wrapper for initialize()."""
@@ -217,10 +211,6 @@ class ExpertRunner:
             # NOTE: FlattenActionWrapper unflattens Dict keys alphabetically
             # "steer" < "throttle", so flattened order is [steer, throttle]
             action = np.array([steer, combined_throttle], dtype=np.float32)
-
-            # Debug: print action on first few steps
-            if step < 10:
-                print(f"  [DEBUG] Step {step}: throttle={throttle:.3f}, brake={brake:.3f}, steer={steer:.3f} -> action=[steer={steer:.3f}, throttle={combined_throttle:.3f}]")
 
             if collect_data:
                 collected_obs.append(obs.copy())

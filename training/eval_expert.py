@@ -25,7 +25,7 @@ SUBSTEPS_PER_STEP = 5
 RACING_LINE_PATH = Path(__file__).parent.parent / "racingline" / "main.npz"
 
 
-async def get_env_async(record_video: bool = False, video_name: str = "expert_eval") -> gym.Env:
+async def get_env_async(record_video: bool = False, video_name: str = "expert_eval", spawn_at_start: bool = True) -> gym.Env:
     """Initialize the ROAR environment."""
     env = await initialize_roar_env(
         control_timestep=1.0 / RUN_FPS,
@@ -35,6 +35,10 @@ async def get_env_async(record_video: bool = False, video_name: str = "expert_ev
         racing_line_path=str(RACING_LINE_PATH),
         use_discrete_actions=False  # Continuous actions for expert
     )
+
+    # Set spawn location - waypoint 0 for competition start
+    if spawn_at_start:
+        env.unwrapped.spawn_waypoint_idx = 0
 
     # Keep unwrapped env reference before adding wrappers
     unwrapped_env = env

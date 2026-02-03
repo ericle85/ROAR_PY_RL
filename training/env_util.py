@@ -98,12 +98,6 @@ class SimplifyCarlaActionFilter(gym.ActionWrapper):
             "hand_brake": 0.0,
             "reverse": 0.0
         }
-        # DEBUG
-        if not hasattr(self, '_debug_count'):
-            self._debug_count = 0
-        if self._debug_count < 5:
-            print(f"  [ACTION DEBUG] throttle={real_action['throttle']}, brake={real_action['brake']}, steer={real_action['steer']}")
-            self._debug_count += 1
         return real_action
 
 async def initialize_roar_env(
