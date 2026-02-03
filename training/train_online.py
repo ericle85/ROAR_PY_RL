@@ -18,8 +18,8 @@ from env_util import initialize_roar_env
 from roar_py_rl_carla import FlattenActionWrapper
 from stable_baselines3.common.callbacks import CheckpointCallback, EveryNTimesteps, CallbackList, BaseCallback
 
-RUN_FPS=25
-SUBSTEPS_PER_STEP = 5
+RUN_FPS=10
+SUBSTEPS_PER_STEP = 2
 MODEL_SAVE_FREQ = 50_000
 VIDEO_SAVE_FREQ = 20_000
 TIME_LIMIT = RUN_FPS * 2 * 60

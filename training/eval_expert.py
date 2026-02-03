@@ -22,7 +22,7 @@ from expert_policy import ExpertPolicyWrapper, ExpertRunner
 
 RUN_FPS = 25
 SUBSTEPS_PER_STEP = 5
-RACING_LINE_PATH = Path(__file__).parent.parent / "racingline" / "main.npz"
+RACING_LINE_PATH = r"C:\Users\shrek\ROAR_PY_RL\ROAR_1_S25\competition_code\waypoints\waypointsPrimary.npz"
 
 
 async def get_env_async(record_video: bool = False, video_name: str = "expert_eval", spawn_at_start: bool = True) -> gym.Env:
