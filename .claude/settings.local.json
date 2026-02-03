@@ -4,7 +4,8 @@
       "Bash(python3:*)",
       "WebFetch(domain:github.com)",
       "Bash(git ls-tree:*)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(tree:*)"
     ]
   }
 }
