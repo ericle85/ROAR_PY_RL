@@ -61,6 +61,8 @@ class ExpertPolicyWrapper:
         sensors = self._get_sensors()
 
         # Create the competition solution
+        # Set apply_action=False so we compute control but don't apply it
+        # (the env.step() will apply our converted action instead)
         self.expert = RoarCompetitionSolution(
             maneuverable_waypoints=env.waypoints_tracer._waypoints,  # Will be overwritten by initialize()
             vehicle=env.roar_py_actor,
@@ -70,12 +72,20 @@ class ExpertPolicyWrapper:
             rpy_sensor=sensors['rpy_sensor'],
             occupancy_map_sensor=None,
             collision_sensor=sensors['collision_sensor'],
+            apply_action=False,  # Don't apply action - let env.step() handle it
         )
 
         # Initialize loads the custom waypoints and sets up section tracking
         await self.expert.initialize()
         self._initialized = True
-        print("Expert policy initialized successfully")
+
+        # Debug: print expert state
+        loc = sensors['location_sensor'].get_last_gym_observation()
+        print(f"Expert policy initialized successfully")
+        print(f"  Vehicle location: {loc}")
+        print(f"  Expert waypoint count: {len(self.expert.maneuverable_waypoints)}")
+        print(f"  Expert current_waypoint_idx: {self.expert.current_waypoint_idx}")
+        print(f"  Expert apply_action: {self.expert.apply_action}")
 
     def initialize_sync(self):
         """Synchronous wrapper for initialize()."""
@@ -200,6 +210,10 @@ class ExpertRunner:
                 combined_throttle = throttle
 
             action = np.array([combined_throttle, steer], dtype=np.float32)
+
+            # Debug: print action on first few steps
+            if step < 10:
+                print(f"  [DEBUG] Step {step}: throttle={throttle:.3f}, brake={brake:.3f}, steer={steer:.3f} -> action={action}")
 
             if collect_data:
                 collected_obs.append(obs.copy())

@@ -108,6 +108,7 @@ class RoarCompetitionSolution:
         rpy_sensor: roar_py_interface.RoarPyRollPitchYawSensor = None,
         occupancy_map_sensor: roar_py_interface.RoarPyOccupancyMapSensor = None,
         collision_sensor: roar_py_interface.RoarPyCollisionSensor = None,
+        apply_action: bool = True,  # Set False to only compute control, not apply it
     ) -> None:
         self.maneuverable_waypoints = maneuverable_waypoints
         self.vehicle = vehicle
@@ -117,6 +118,7 @@ class RoarCompetitionSolution:
         self.rpy_sensor = rpy_sensor
         self.occupancy_map_sensor = occupancy_map_sensor
         self.collision_sensor = collision_sensor
+        self.apply_action = apply_action
         self.lat_controller = LatController()
         self.throttle_controller = ThrottleController()
         self.section_stats = None
@@ -351,7 +353,8 @@ loc: ({vehicle_location[0]:.2f}, {vehicle_location[1]:.2f}) wp({wpl[0]:.1f}, {wp
 # Steer: {control['steer']:.10f} \n"
 #                 )
 
-        await self.vehicle.apply_action(control)
+        if self.apply_action:
+            await self.vehicle.apply_action(control)
         return control
 
     def get_lookahead_value(self, speed):
