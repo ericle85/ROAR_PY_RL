@@ -80,13 +80,30 @@ class SimplifyCarlaActionFilter(gym.ActionWrapper):
         #     velocity = self.env.unwrapped.roar_py_actor.get_linear_3d_velocity()
         #     velocity = np.linalg.norm(velocity)
         
+        # Convert to scalar floats - CARLA may expect scalars not arrays
+        throttle_val = action["throttle"]
+        if hasattr(throttle_val, '__len__'):
+            throttle_val = float(throttle_val[0]) if len(throttle_val) > 0 else 0.0
+        throttle_val = float(throttle_val)
+
+        steer_val = action["steer"]
+        if hasattr(steer_val, '__len__'):
+            steer_val = float(steer_val[0]) if len(steer_val) > 0 else 0.0
+        steer_val = float(steer_val)
+
         real_action = {
-            "throttle": np.clip(action["throttle"], 0.0, 1.0),
-            "brake": np.clip(-action["throttle"], 0.0, 1.0),
-            "steer": action["steer"],
+            "throttle": max(0.0, min(1.0, throttle_val)),
+            "brake": max(0.0, min(1.0, -throttle_val)),
+            "steer": steer_val,
             "hand_brake": 0.0,
             "reverse": 0.0
         }
+        # DEBUG
+        if not hasattr(self, '_debug_count'):
+            self._debug_count = 0
+        if self._debug_count < 5:
+            print(f"  [ACTION DEBUG] throttle={real_action['throttle']}, brake={real_action['brake']}, steer={real_action['steer']}")
+            self._debug_count += 1
         return real_action
 
 async def initialize_roar_env(
