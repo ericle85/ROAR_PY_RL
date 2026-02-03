@@ -68,9 +68,8 @@ async def run_expert_async(
     print("Creating expert policy wrapper...")
     expert = ExpertPolicyWrapper(env)
 
-    print("Initializing expert (loading waypoints, etc.)...")
-    await expert.initialize()
-
+    # Note: Expert will be initialized by runner AFTER env.reset()
+    # to ensure waypoints are computed from the correct spawn location
     runner = ExpertRunner(env, expert)
     results = []
 

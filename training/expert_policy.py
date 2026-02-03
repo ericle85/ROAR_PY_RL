@@ -187,9 +187,12 @@ class ExpertRunner:
         Returns:
             Dict with episode stats and optionally collected data
         """
-        await self.expert.initialize()
-
+        # Reset env FIRST to place vehicle at spawn point
         obs, info = self.env.reset()
+
+        # THEN initialize expert so it finds waypoints from the correct location
+        self.expert._initialized = False  # Force re-initialization
+        await self.expert.initialize()
 
         collected_obs = []
         collected_actions = []
