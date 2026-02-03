@@ -103,6 +103,24 @@ def main():
             tensorboard_log=f"runs/{wandb_run.name}",
             **training_params
         )
+
+        # Load pretrained BC weights into actor
+        bc_path = "training/supervised/checkpoints/best_model.pt"
+        if os.path.exists(bc_path):
+            bc_checkpoint = th.load(bc_path, map_location=model.device)
+            bc_weights = bc_checkpoint["model_state_dict"]
+
+            actor_state = model.actor.state_dict()
+            actor_state['latent_pi.0.weight'] = bc_weights['network.0.weight']
+            actor_state['latent_pi.0.bias'] = bc_weights['network.0.bias']
+            actor_state['latent_pi.2.weight'] = bc_weights['network.2.weight']
+            actor_state['latent_pi.2.bias'] = bc_weights['network.2.bias']
+            actor_state['mu.weight'] = bc_weights['network.4.weight']
+            actor_state['mu.bias'] = bc_weights['network.4.bias']
+            model.actor.load_state_dict(actor_state)
+            print(f"Loaded pretrained BC weights from {bc_path}")
+        else:
+            print(f"No pretrained BC weights found at {bc_path}, starting from scratch")
     else:
         # Load the model
         print(f"reloading from {type(latest_model_path)} {latest_model_path}\n\n\n\n")
