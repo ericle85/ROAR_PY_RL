@@ -119,9 +119,8 @@ def main():
             actor_state['mu.weight'] = bc_weights['network.4.weight']
             actor_state['mu.bias'] = bc_weights['network.4.bias']
 
-            # Reduce initial exploration noise (log_std controls stochasticity)
-            # Lower value = more deterministic = use pretrained policy more
-            actor_state['log_std'] = th.full_like(actor_state['log_std'], -2.0)
+            # Reduce exploration noise - set log_std bias very negative for deterministic start
+            actor_state['log_std.bias'] = th.full_like(actor_state['log_std.bias'], -5.0)
 
             model.actor.load_state_dict(actor_state)
             print(f"Loaded pretrained BC weights from {bc_path}")
