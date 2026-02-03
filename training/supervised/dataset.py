@@ -15,14 +15,21 @@ class ExpertDataset(Dataset):
     Args:
         data_dirs: Directory or list of directories containing .npz files
             with 'observations' and 'actions' arrays.
+        prev_action_noise_std: Standard deviation of Gaussian noise to add to
+            prev_action (last 2 elements of observation). Set to 0.0 to disable.
     """
 
-    def __init__(self, data_dirs: Union[str, List[str]] = "training/expert_data"):
+    def __init__(
+        self,
+        data_dirs: Union[str, List[str]] = "training/expert_data",
+        prev_action_noise_std: float = 0.0,
+    ):
         # Normalize to list
         if isinstance(data_dirs, str):
             data_dirs = [data_dirs]
 
         self.data_dirs = data_dirs
+        self.prev_action_noise_std = prev_action_noise_std
 
         # Load all .npz files from all directories
         observations_list = []
@@ -62,7 +69,13 @@ class ExpertDataset(Dataset):
         return len(self.observations)
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        return self.observations[idx], self.actions[idx]
+        obs = self.observations[idx]
+        if self.prev_action_noise_std > 0:
+            obs = obs.clone()
+            # prev_action is the last 2 elements of observation (throttle, steer)
+            noise = torch.randn(2) * self.prev_action_noise_std
+            obs[-2:] = torch.clamp(obs[-2:] + noise, -1.0, 1.0)
+        return obs, self.actions[idx]
 
 
 def create_dataloaders(
@@ -71,6 +84,7 @@ def create_dataloaders(
     val_split: float = 0.2,
     seed: int = 1,
     num_workers: int = 0,
+    prev_action_noise_std: float = 0.0,
 ) -> Tuple[DataLoader, DataLoader]:
     """Create train and validation DataLoaders from expert data.
 
@@ -80,11 +94,12 @@ def create_dataloaders(
         val_split: Fraction of data to use for validation.
         seed: Random seed for reproducible splits.
         num_workers: Number of worker processes for data loading.
+        prev_action_noise_std: Standard deviation of noise to add to prev_action.
 
     Returns:
         Tuple of (train_loader, val_loader).
     """
-    dataset = ExpertDataset(data_dir)
+    dataset = ExpertDataset(data_dir, prev_action_noise_std=prev_action_noise_std)
 
     # Calculate split sizes
     val_size = int(len(dataset) * val_split)

@@ -69,6 +69,12 @@ def parse_args() -> argparse.Namespace:
         default=0.075,
         help="Threshold for accuracy metric (predictions within this of expert)",
     )
+    parser.add_argument(
+        "--prev-action-noise",
+        type=float,
+        default=0.1,
+        help="Std dev of Gaussian noise to add to prev_action in observations",
+    )
 
     return parser.parse_args()
 
@@ -187,6 +193,7 @@ def main():
                     "seed": args.seed,
                     "patience": args.patience,
                     "acc_threshold": args.acc_threshold,
+                    "prev_action_noise": args.prev_action_noise,
                 },
             )
         except ImportError:
@@ -199,6 +206,7 @@ def main():
         batch_size=args.batch_size,
         val_split=args.val_split,
         seed=args.seed,
+        prev_action_noise_std=args.prev_action_noise,
     )
 
     # Get data dimensions from first batch
