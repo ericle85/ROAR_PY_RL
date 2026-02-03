@@ -133,5 +133,8 @@ dmypy.json
 
 
 runs/
+*.pt
+*.npz
 training/supervised/checkpoints/best_model.pt
 training/supervised/checkpoints/final_model.pt
+ROAR_1_S25/competition_code/debugData/line.txt

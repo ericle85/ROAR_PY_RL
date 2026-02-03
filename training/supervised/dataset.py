@@ -66,7 +66,7 @@ class ExpertDataset(Dataset):
 
 
 def create_dataloaders(
-    data_dir: str = "training/expert_data",
+    data_dir: str = "training/expert_data/dagger",
     batch_size: int = 256,
     val_split: float = 0.2,
     seed: int = 1,

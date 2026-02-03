@@ -7,7 +7,8 @@ from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
-from torch.optim import Adam
+# from torch.optim import EVE
+from eve.optimizers import EVE
 
 from .dataset import create_dataloaders
 from .model import MLPPolicy
@@ -24,7 +25,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--hidden-sizes",
         type=str,
-        default="64,64",
+        default="256,256",
         help="Hidden layer sizes, comma-separated",
     )
     parser.add_argument(
@@ -75,7 +76,7 @@ def parse_args() -> argparse.Namespace:
 def train_epoch(
     model: nn.Module,
     train_loader,
-    optimizer: Adam,
+    optimizer: EVE,
     criterion: nn.Module,
     device: torch.device,
 ) -> float:
@@ -212,10 +213,13 @@ def main():
         action_dim=action_dim,
         hidden_sizes=hidden_sizes,
     ).to(device)
+
+    # state_dict = torch.load(os.path.join(args.output_dir, "best_model.pt"), map_location=device)
+    # model.load_state_dict(state_dict["model_state_dict"])
     print(f"Model: {model}")
 
     # Setup training
-    optimizer = Adam(model.parameters(), lr=args.lr)
+    optimizer = EVE(model.parameters(), lr=args.lr)
     criterion = nn.MSELoss()
 
     # Training loop with early stopping

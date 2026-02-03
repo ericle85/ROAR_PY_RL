@@ -18,8 +18,8 @@ from env_util import initialize_roar_env
 from roar_py_rl_carla import FlattenActionWrapper
 from stable_baselines3.common.callbacks import CheckpointCallback, EveryNTimesteps, CallbackList, BaseCallback
 
-RUN_FPS=10
-SUBSTEPS_PER_STEP = 2
+RUN_FPS=25
+SUBSTEPS_PER_STEP = 5
 MODEL_SAVE_FREQ = 50_000
 VIDEO_SAVE_FREQ = 20_000
 TIME_LIMIT = RUN_FPS * 2 * 60
@@ -94,6 +94,7 @@ def main():
 
     models_path = f"models/{wandb_run.name}"
     latest_model_path = find_latest_model(Path(models_path))
+    latest_model_path = None  # force new model for testing
     
     if latest_model_path is None:
         # create new models
@@ -105,9 +106,9 @@ def main():
         )
 
         # Load pretrained BC weights into actor
-        bc_path = "training/supervised/checkpoints/best_model.pt"
+        bc_path = r"C:\Users\shrek\ROAR_PY_RL\training\supervised\checkpoints\best_model.pt"
         if os.path.exists(bc_path):
-            bc_checkpoint = th.load(bc_path, map_location=model.device)
+            bc_checkpoint = th.load(bc_path, map_location=model.device, weights_only=True)
             bc_weights = bc_checkpoint["model_state_dict"]
 
             actor_state = model.actor.state_dict()
