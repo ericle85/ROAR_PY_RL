@@ -109,7 +109,7 @@ async def initialize_roar_env(
     image_width : int = 400,
     image_height : int = 200,
     racing_line_path : str = None,
-    centerline_path : str = None,
+    use_occupancy_map : bool = True,
     use_discrete_actions : bool = False,  # Default to continuous for SAC
     action_lut : np.ndarray = None
 ):
@@ -153,13 +153,18 @@ async def initialize_roar_env(
         image_width=image_width,
         image_height=image_height
     )
-    # occupancy_map_sensor = vehicle.attach_occupancy_map_sensor(
-    #     50,
-    #     50,
-    #     4.0,
-    #     4.0,
-    #     name="occupancy_map"
-    # )
+
+    # Occupancy map sensor: 50x50 grid, 12m wide (±6m) x 60m long (±30m)
+    occupancy_map_sensor = None
+    if use_occupancy_map:
+        occupancy_map_sensor = vehicle.attach_occupancy_map_sensor(
+            50,    # width in pixels
+            50,    # height in pixels
+            6.0,   # half-width in meters (±6m = 12m total)
+            30.0,  # half-height in meters (±30m = 60m total)
+            name="occupancy_map"
+        )
+        assert occupancy_map_sensor is not None, "Failed to attach occupancy map sensor"
 
     await world.step()
     await vehicle.receive_observation()
@@ -174,10 +179,15 @@ async def initialize_roar_env(
         world = world,
         collision_threshold = 1.0,
         racing_line_path = racing_line_path,
-        centerline_path = centerline_path
+        occupancy_map_sensor = occupancy_map_sensor
     )
     env = SimplifyCarlaActionFilter(env)
-    env = gym.wrappers.FilterObservation(env, ["gyroscope", "waypoints_information", "local_velocimeter", "lateral_offset", "prev_action"])
+
+    # Build observation filter list
+    obs_keys = ["gyroscope", "waypoints_information", "local_velocimeter", "prev_action"]
+    if use_occupancy_map:
+        obs_keys.append("occupancy_map")
+    env = gym.wrappers.FilterObservation(env, obs_keys)
 
     if use_discrete_actions:
         env = DiscreteToContActionWrapper(env, action_lut=action_lut)

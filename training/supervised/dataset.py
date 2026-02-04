@@ -16,13 +16,16 @@ class ExpertDataset(Dataset):
         data_dirs: Directory or list of directories containing .npz files
             with 'observations' and 'actions' arrays.
         prev_action_noise_std: Standard deviation of Gaussian noise to add to
-            prev_action (last 2 elements of observation). Set to 0.0 to disable.
+            prev_action. Set to 0.0 to disable.
+        prev_action_indices: Tuple of (start, end) indices for prev_action in obs.
+            Default (46, 48) for: [gyro(3), waypoints(40), vel(3), prev_action(2), ...]
     """
 
     def __init__(
         self,
         data_dirs: Union[str, List[str]] = "training/expert_data",
         prev_action_noise_std: float = 0.0,
+        prev_action_indices: Tuple[int, int] = (46, 48),
     ):
         # Normalize to list
         if isinstance(data_dirs, str):
@@ -30,6 +33,7 @@ class ExpertDataset(Dataset):
 
         self.data_dirs = data_dirs
         self.prev_action_noise_std = prev_action_noise_std
+        self.prev_action_indices = prev_action_indices
 
         # Load all .npz files from all directories
         observations_list = []
@@ -76,9 +80,10 @@ class ExpertDataset(Dataset):
         obs = self.observations[idx]
         if self.prev_action_noise_std > 0:
             obs = obs.clone()
-            # prev_action is the last 2 elements of observation (throttle, steer)
-            noise = torch.randn(2) * self.prev_action_noise_std
-            obs[-2:] = torch.clamp(obs[-2:] + noise, -1.0, 1.0)
+            # prev_action at specified indices (throttle, steer)
+            start, end = self.prev_action_indices
+            noise = torch.randn(end - start) * self.prev_action_noise_std
+            obs[start:end] = torch.clamp(obs[start:end] + noise, -1.0, 1.0)
         return obs, self.actions[idx]
 
 
@@ -89,6 +94,7 @@ def create_dataloaders(
     seed: int = 1,
     num_workers: int = 0,
     prev_action_noise_std: float = 0.0,
+    prev_action_indices: Tuple[int, int] = (46, 48),
 ) -> Tuple[DataLoader, DataLoader]:
     """Create train and validation DataLoaders from expert data.
 
@@ -99,11 +105,16 @@ def create_dataloaders(
         seed: Random seed for reproducible splits.
         num_workers: Number of worker processes for data loading.
         prev_action_noise_std: Standard deviation of noise to add to prev_action.
+        prev_action_indices: Tuple of (start, end) indices for prev_action in obs.
 
     Returns:
         Tuple of (train_loader, val_loader).
     """
-    dataset = ExpertDataset(data_dir, prev_action_noise_std=prev_action_noise_std)
+    dataset = ExpertDataset(
+        data_dir,
+        prev_action_noise_std=prev_action_noise_std,
+        prev_action_indices=prev_action_indices
+    )
 
     # Calculate split sizes
     val_size = int(len(dataset) * val_split)

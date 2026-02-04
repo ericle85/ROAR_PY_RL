@@ -26,7 +26,6 @@ VIDEO_SAVE_FREQ = 10_000
 
 # Racing line path (relative to repo root)
 RACING_LINE_PATH = Path(__file__).parent.parent / "racingline" / "main.npz"
-CENTERLINE_PATH = Path(__file__).parent.parent / "racingline" / "Monza.npz"
 training_params = dict(
     learning_rate=2.5e-4,
     n_steps=2048,
@@ -71,7 +70,7 @@ def get_env(wandb_run) -> gym.Env:
         image_width=1920,
         image_height=1080,
         racing_line_path=str(RACING_LINE_PATH),
-        centerline_path=str(CENTERLINE_PATH)
+        use_occupancy_map=True
     ))
     env = gym.wrappers.FlattenObservation(env)
     env = FlattenActionWrapper(env)

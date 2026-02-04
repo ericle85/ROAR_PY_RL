@@ -1,5 +1,5 @@
 from typing import List, Optional, NamedTuple
-from roar_py_interface import RoarPyActor, RoarPySensor, RoarPyWaypoint, RoarPyWorld, RoarPyLocationInWorldSensor, RoarPyCollisionSensor, RoarPyVelocimeterSensor, RoarPyRollPitchYawSensor, RoarPyWaypointsTracker, RoarPyWaypointsProjection
+from roar_py_interface import RoarPyActor, RoarPySensor, RoarPyWaypoint, RoarPyWorld, RoarPyLocationInWorldSensor, RoarPyCollisionSensor, RoarPyVelocimeterSensor, RoarPyRollPitchYawSensor, RoarPyWaypointsTracker, RoarPyWaypointsProjection, RoarPyOccupancyMapSensor
 from .base_env import RoarRLEnv
 from typing import Any, Dict, SupportsFloat, Tuple, Optional, Set
 import gymnasium as gym
@@ -282,7 +282,7 @@ class RoarRLSimEnv(RoarRLEnv):
             world: Optional[RoarPyWorld] = None,
             render_mode="rgb_array",
             racing_line_path: Optional[str] = None,
-            centerline_path: Optional[str] = None
+            occupancy_map_sensor: Optional[RoarPyOccupancyMapSensor] = None
         ) -> None:
         super().__init__(actor, manuverable_waypoints, world, render_mode)
         self.location_sensor = location_sensor
@@ -291,6 +291,7 @@ class RoarRLSimEnv(RoarRLEnv):
         self.collision_sensor = collision_sensor
         self.collision_threshold = collision_threshold
         self.waypoint_information_distances = waypoint_information_distances
+        self.occupancy_map_sensor = occupancy_map_sensor
 
         self.waypoints_tracer = RoarPyWaypointsTracker(manuverable_waypoints)
         self._traced_projection : RoarPyWaypointsProjection = RoarPyWaypointsProjection(0,0.0)
@@ -306,20 +307,9 @@ class RoarRLSimEnv(RoarRLEnv):
             self._racing_line_projection = RacingLineProjection(0, 0.0)
             print(f"Loaded racing line with {self.racing_line.num_points} points, total length: {self.racing_line.total_length:.1f}m")
 
-        # Centerline tracking (for lateral offset / wall awareness)
-        self.centerline: Optional[RacingLineTracker] = None
-        self._centerline_projection: Optional[RacingLineProjection] = None
-        if centerline_path is not None:
-            self.centerline = RacingLineTracker(centerline_path)
-            self._centerline_projection = RacingLineProjection(0, 0.0)
-            print(f"Loaded centerline with {self.centerline.num_points} points, total length: {self.centerline.total_length:.1f}m")
-
         # Previous action for observation (throttle, steer)
         self._prev_action = np.zeros(2, dtype=np.float32)
         self._action_smoothness_penalty = 0.0
-
-        # Lateral offset from centerline (signed: + = right, - = left)
-        self._lateral_offset = 0.0
 
     @property
     def observation_space(self) -> gym.Space:
@@ -343,13 +333,9 @@ class RoarRLSimEnv(RoarRLEnv):
             dtype=np.float32
         )
 
-        # Lateral offset from centerline (signed: + = right, - = left)
-        space["lateral_offset"] = gym.spaces.Box(
-            low=-np.inf,
-            high=np.inf,
-            shape=(1,),
-            dtype=np.float32
-        )
+        # Occupancy map (if sensor is attached)
+        if self.occupancy_map_sensor is not None:
+            space["occupancy_map"] = self.occupancy_map_sensor.get_gym_observation_spec()
 
         return space
 
@@ -389,7 +375,11 @@ class RoarRLSimEnv(RoarRLEnv):
             obs["waypoints_information"] = waypoint_info
 
         obs["prev_action"] = self._prev_action.copy()
-        obs["lateral_offset"] = np.array([self._lateral_offset], dtype=np.float32)
+
+        # Occupancy map observation
+        if self.occupancy_map_sensor is not None:
+            obs["occupancy_map"] = self.occupancy_map_sensor.get_last_gym_observation()
+
         info_dict["delta_distance_travelled"] = self._delta_distance_travelled
         return obs
 
@@ -398,9 +388,11 @@ class RoarRLSimEnv(RoarRLEnv):
 
     @property
     def sensors_to_update(self) -> List[RoarPySensor]:
+        sensors = [self.location_sensor, self.roll_pitch_yaw_sensor, self.velocimeter_sensor, self.collision_sensor]
+        if self.occupancy_map_sensor is not None:
+            sensors.append(self.occupancy_map_sensor)
         return [
-            sensor for sensor in
-            [self.location_sensor, self.roll_pitch_yaw_sensor, self.velocimeter_sensor, self.collision_sensor]
+            sensor for sensor in sensors
             if sensor not in self.roar_py_actor.get_sensors()
         ]
 
@@ -461,15 +453,6 @@ class RoarRLSimEnv(RoarRLEnv):
             self._racing_line_dist = self.racing_line.get_distance_to_racing_line(location, new_projection)
             self._racing_line_delta_progress = self.racing_line.delta_distance_projection(old_projection, new_projection)
 
-        # Track centerline for lateral offset (wall awareness)
-        if self.centerline is not None:
-            old_centerline_proj = self._centerline_projection
-            new_centerline_proj = self.centerline.trace_point(location, old_centerline_proj.segment_idx)
-            self._centerline_projection = new_centerline_proj
-            self._lateral_offset = self.centerline.get_signed_lateral_offset(location, new_centerline_proj)
-        else:
-            self._lateral_offset = 0.0
-
     def _step(self, action: Any) -> None:
         # Extract throttle/steer from dict
         if isinstance(action, dict):
@@ -500,15 +483,6 @@ class RoarRLSimEnv(RoarRLEnv):
                 location, self._racing_line_projection
             )
             self._racing_line_delta_progress = 0.0
-
-        # Initialize centerline tracking for lateral offset
-        if self.centerline is not None:
-            self._centerline_projection = self.centerline.trace_point(location, 0)
-            self._lateral_offset = self.centerline.get_signed_lateral_offset(
-                location, self._centerline_projection
-            )
-        else:
-            self._lateral_offset = 0.0
 
         self._perform_waypoint_trace()
         self._delta_distance_travelled = 0.0

@@ -11,7 +11,7 @@ import torch.nn as nn
 from eve.optimizers import EVE
 
 from .dataset import create_dataloaders
-from .model import MLPPolicy
+from .model import MLPPolicy, CNNMLPPolicy
 
 
 def parse_args() -> argparse.Namespace:
@@ -74,6 +74,17 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=0.1,
         help="Std dev of Gaussian noise to add to prev_action in observations",
+    )
+    parser.add_argument(
+        "--use-occupancy-map",
+        action="store_true",
+        help="Use CNN+MLP model for occupancy map observations",
+    )
+    parser.add_argument(
+        "--occupancy-embed-dim",
+        type=int,
+        default=64,
+        help="Embedding dimension for occupancy map CNN encoder",
     )
 
     return parser.parse_args()
@@ -200,6 +211,12 @@ def main():
             print("wandb not installed, disabling wandb logging")
             args.wandb = False
 
+    # Determine observation structure and prev_action indices
+    # Without occupancy map: [gyro(3), waypoints(40), vel(3), prev_action(2)] = 48 dims
+    # With occupancy map: [gyro(3), waypoints(40), vel(3), prev_action(2), occ_map(2500)] = 2548 dims
+    vector_obs_dim = 48  # gyroscope(3) + waypoints(40) + velocimeter(3) + prev_action(2)
+    prev_action_indices = (46, 48)  # prev_action at indices 46-47
+
     # Create dataloaders
     train_loader, val_loader = create_dataloaders(
         data_dir=args.data_dir,
@@ -207,6 +224,7 @@ def main():
         val_split=args.val_split,
         seed=args.seed,
         prev_action_noise_std=args.prev_action_noise,
+        prev_action_indices=prev_action_indices,
     )
 
     # Get data dimensions from first batch
@@ -215,12 +233,25 @@ def main():
     action_dim = sample_actions.shape[1]
     print(f"Observation dim: {obs_dim}, Action dim: {action_dim}")
 
+    # Auto-detect if occupancy map is present based on obs_dim
+    use_occupancy_map = args.use_occupancy_map or obs_dim > vector_obs_dim
+    if use_occupancy_map:
+        print(f"Using CNN+MLP model (occupancy map detected: {obs_dim - vector_obs_dim} extra dims)")
+
     # Create model
-    model = MLPPolicy(
-        obs_dim=obs_dim,
-        action_dim=action_dim,
-        hidden_sizes=hidden_sizes,
-    ).to(device)
+    if use_occupancy_map:
+        model = CNNMLPPolicy(
+            vector_obs_dim=vector_obs_dim,
+            action_dim=action_dim,
+            hidden_sizes=hidden_sizes,
+            occupancy_embed_dim=args.occupancy_embed_dim,
+        ).to(device)
+    else:
+        model = MLPPolicy(
+            obs_dim=obs_dim,
+            action_dim=action_dim,
+            hidden_sizes=hidden_sizes,
+        ).to(device)
 
     # state_dict = torch.load(os.path.join(args.output_dir, "best_model.pt"), map_location=device)
     # model.load_state_dict(state_dict["model_state_dict"])
