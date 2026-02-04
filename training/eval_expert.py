@@ -23,6 +23,7 @@ from expert_policy import ExpertPolicyWrapper, ExpertRunner
 RUN_FPS = 25
 SUBSTEPS_PER_STEP = 5
 RACING_LINE_PATH = r"C:\Users\shrek\ROAR_PY_RL\ROAR_1_S25\competition_code\waypoints\waypointsPrimary.npz"
+CENTERLINE_PATH = r"C:\Users\shrek\ROAR_PY_RL\racingline\Monza.npz"
 
 
 async def get_env_async(record_video: bool = False, video_name: str = "expert_eval", spawn_at_start: bool = True) -> gym.Env:
@@ -33,6 +34,7 @@ async def get_env_async(record_video: bool = False, video_name: str = "expert_ev
         image_width=1920,
         image_height=1080,
         racing_line_path=str(RACING_LINE_PATH),
+        centerline_path=str(CENTERLINE_PATH),
         use_discrete_actions=False  # Continuous actions for expert
     )
 

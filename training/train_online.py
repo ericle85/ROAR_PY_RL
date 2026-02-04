@@ -28,6 +28,7 @@ run_name = "SAC_Continuous_RacingLine"
 
 # Racing line path (relative to repo root)
 RACING_LINE_PATH = r'C:\Users\shrek\ROAR_PY_RL\racingline\main.npz'
+CENTERLINE_PATH = r'C:\Users\shrek\ROAR_PY_RL\racingline\Monza.npz'
 
 # SAC training parameters
 training_params = dict(
@@ -69,6 +70,7 @@ def get_env(wandb_run) -> gym.Env:
         control_timestep=1.0/RUN_FPS,
         physics_timestep=1.0/(RUN_FPS*SUBSTEPS_PER_STEP),
         racing_line_path=str(RACING_LINE_PATH),
+        centerline_path=str(CENTERLINE_PATH),
         use_discrete_actions=USE_DISCRETE_ACTIONS
     ))
     env = gym.wrappers.FlattenObservation(env)

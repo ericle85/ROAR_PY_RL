@@ -26,6 +26,7 @@ from expert_policy import ExpertPolicyWrapper
 RUN_FPS = 25
 SUBSTEPS_PER_STEP = 5
 RACING_LINE_PATH = Path(__file__).parent.parent / "racingline" / "main.npz"
+CENTERLINE_PATH = Path(__file__).parent.parent / "racingline" / "Monza.npz"
 
 
 def load_model(checkpoint_path: str, device: torch.device) -> MLPPolicy:
@@ -64,6 +65,7 @@ async def get_env_async(
         image_width=1920,
         image_height=1080,
         racing_line_path=str(RACING_LINE_PATH),
+        centerline_path=str(CENTERLINE_PATH),
         use_discrete_actions=False,
     )
 

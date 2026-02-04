@@ -193,6 +193,34 @@ class RacingLineTracker:
         interpolated = self.get_interpolated_location(projection)
         return np.linalg.norm(point[:2] - interpolated[:2])
 
+    def get_signed_lateral_offset(
+        self, point: np.ndarray, projection: RacingLineProjection
+    ) -> float:
+        """Get signed lateral offset from centerline.
+
+        Positive = right of centerline, Negative = left of centerline.
+        Uses cross product to determine side.
+        """
+        # Get the interpolated point on the racing line
+        line_point = self.get_interpolated_location(projection)[:2]
+
+        # Get the direction of the racing line at this point (tangent)
+        idx = projection.segment_idx
+        next_idx = (idx + 1) % self.num_points
+        line_dir = self.locations[next_idx] - self.locations[idx]
+        line_dir = line_dir / (np.linalg.norm(line_dir) + 1e-9)
+
+        # Vector from line point to vehicle
+        to_vehicle = point[:2] - line_point
+
+        # Cross product in 2D: positive = vehicle is to the right
+        # cross = line_dir.x * to_vehicle.y - line_dir.y * to_vehicle.x
+        cross = line_dir[0] * to_vehicle[1] - line_dir[1] * to_vehicle[0]
+
+        # Distance with sign
+        distance = np.linalg.norm(to_vehicle)
+        return float(np.sign(cross) * distance)
+
     def trace_forward_projection(
         self, projection: RacingLineProjection, distance: float
     ) -> RacingLineProjection:
@@ -253,7 +281,8 @@ class RoarRLSimEnv(RoarRLEnv):
             waypoint_information_distances : Set[float] = set([]),
             world: Optional[RoarPyWorld] = None,
             render_mode="rgb_array",
-            racing_line_path: Optional[str] = None
+            racing_line_path: Optional[str] = None,
+            centerline_path: Optional[str] = None
         ) -> None:
         super().__init__(actor, manuverable_waypoints, world, render_mode)
         self.location_sensor = location_sensor
@@ -277,9 +306,20 @@ class RoarRLSimEnv(RoarRLEnv):
             self._racing_line_projection = RacingLineProjection(0, 0.0)
             print(f"Loaded racing line with {self.racing_line.num_points} points, total length: {self.racing_line.total_length:.1f}m")
 
+        # Centerline tracking (for lateral offset / wall awareness)
+        self.centerline: Optional[RacingLineTracker] = None
+        self._centerline_projection: Optional[RacingLineProjection] = None
+        if centerline_path is not None:
+            self.centerline = RacingLineTracker(centerline_path)
+            self._centerline_projection = RacingLineProjection(0, 0.0)
+            print(f"Loaded centerline with {self.centerline.num_points} points, total length: {self.centerline.total_length:.1f}m")
+
         # Previous action for observation (throttle, steer)
         self._prev_action = np.zeros(2, dtype=np.float32)
         self._action_smoothness_penalty = 0.0
+
+        # Lateral offset from centerline (signed: + = right, - = left)
+        self._lateral_offset = 0.0
 
     @property
     def observation_space(self) -> gym.Space:
@@ -300,6 +340,14 @@ class RoarRLSimEnv(RoarRLEnv):
             low=-1.0,
             high=1.0,
             shape=(2,),
+            dtype=np.float32
+        )
+
+        # Lateral offset from centerline (signed: + = right, - = left)
+        space["lateral_offset"] = gym.spaces.Box(
+            low=-np.inf,
+            high=np.inf,
+            shape=(1,),
             dtype=np.float32
         )
 
@@ -341,6 +389,7 @@ class RoarRLSimEnv(RoarRLEnv):
             obs["waypoints_information"] = waypoint_info
 
         obs["prev_action"] = self._prev_action.copy()
+        obs["lateral_offset"] = np.array([self._lateral_offset], dtype=np.float32)
         info_dict["delta_distance_travelled"] = self._delta_distance_travelled
         return obs
 
@@ -412,6 +461,15 @@ class RoarRLSimEnv(RoarRLEnv):
             self._racing_line_dist = self.racing_line.get_distance_to_racing_line(location, new_projection)
             self._racing_line_delta_progress = self.racing_line.delta_distance_projection(old_projection, new_projection)
 
+        # Track centerline for lateral offset (wall awareness)
+        if self.centerline is not None:
+            old_centerline_proj = self._centerline_projection
+            new_centerline_proj = self.centerline.trace_point(location, old_centerline_proj.segment_idx)
+            self._centerline_projection = new_centerline_proj
+            self._lateral_offset = self.centerline.get_signed_lateral_offset(location, new_centerline_proj)
+        else:
+            self._lateral_offset = 0.0
+
     def _step(self, action: Any) -> None:
         # Extract throttle/steer from dict
         if isinstance(action, dict):
@@ -433,14 +491,24 @@ class RoarRLSimEnv(RoarRLEnv):
         self._perform_waypoint_trace()
 
     def _reset(self) -> None:
+        location = self.location_sensor.get_last_gym_observation()
+
         # Initialize racing line tracking before waypoint trace
         if self.racing_line is not None:
-            location = self.location_sensor.get_last_gym_observation()
             self._racing_line_projection = self.racing_line.trace_point(location, 0)
             self._racing_line_dist = self.racing_line.get_distance_to_racing_line(
                 location, self._racing_line_projection
             )
             self._racing_line_delta_progress = 0.0
+
+        # Initialize centerline tracking for lateral offset
+        if self.centerline is not None:
+            self._centerline_projection = self.centerline.trace_point(location, 0)
+            self._lateral_offset = self.centerline.get_signed_lateral_offset(
+                location, self._centerline_projection
+            )
+        else:
+            self._lateral_offset = 0.0
 
         self._perform_waypoint_trace()
         self._delta_distance_travelled = 0.0

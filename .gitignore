@@ -138,3 +138,4 @@ runs/
 training/supervised/checkpoints/best_model.pt
 training/supervised/checkpoints/final_model.pt
 ROAR_1_S25/competition_code/debugData/line.txt
+test_lateral_offset.py

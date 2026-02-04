@@ -40,7 +40,7 @@ class MLPPolicy(nn.Module):
 
     def __init__(
         self,
-        obs_dim: int = 48,
+        obs_dim: int = 49,
         action_dim: int = 2,
         hidden_sizes: List[int] = None,
     ):

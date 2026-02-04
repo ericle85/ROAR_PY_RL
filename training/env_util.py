@@ -109,6 +109,7 @@ async def initialize_roar_env(
     image_width : int = 400,
     image_height : int = 200,
     racing_line_path : str = None,
+    centerline_path : str = None,
     use_discrete_actions : bool = False,  # Default to continuous for SAC
     action_lut : np.ndarray = None
 ):
@@ -172,10 +173,11 @@ async def initialize_roar_env(
         waypoint_information_distances=set(waypoint_information_distances),
         world = world,
         collision_threshold = 1.0,
-        racing_line_path = racing_line_path
+        racing_line_path = racing_line_path,
+        centerline_path = centerline_path
     )
     env = SimplifyCarlaActionFilter(env)
-    env = gym.wrappers.FilterObservation(env, ["gyroscope", "waypoints_information", "local_velocimeter", "prev_action"])
+    env = gym.wrappers.FilterObservation(env, ["gyroscope", "waypoints_information", "local_velocimeter", "lateral_offset", "prev_action"])
 
     if use_discrete_actions:
         env = DiscreteToContActionWrapper(env, action_lut=action_lut)
